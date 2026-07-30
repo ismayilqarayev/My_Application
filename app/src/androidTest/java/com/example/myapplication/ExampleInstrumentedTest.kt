@@ -8,6 +8,10 @@ import org.junit.runner.RunWith
 
 import org.junit.Assert.*
 
+// Bu da Android Studio-nun avtomatik yaratdığı NÜMUNƏ testdir. Yuxarıdakı
+// ExampleUnitTest-dən fərqi budur: bu, HƏQİQİ Android telefonda və ya
+// emulyatorda işləməlidir (ona görə "instrumented" adlanır), çünki
+// "InstrumentationRegistry" kimi Android-ə məxsus alətlərdən istifadə edir.
 /**
  * Instrumented test, which will execute on an Android device.
  *
@@ -17,8 +21,9 @@ import org.junit.Assert.*
 class ExampleInstrumentedTest {
     @Test
     fun useAppContext() {
-        // Context of the app under test.
+        // Test edilən tətbiqin "context"i (Android-in tətbiq haqqında məlumat obyekti)
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
+        // Yoxlayır ki, tətbiqin paket adı düzgündür (build.gradle.kts-dəki "applicationId" ilə eyni olmalıdır)
         assertEquals("com.example.myapplication", appContext.packageName)
     }
 }

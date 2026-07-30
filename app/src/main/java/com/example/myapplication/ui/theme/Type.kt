@@ -6,7 +6,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// Set of Material typography styles to start with
+// Bu fayl tətbiqin ŞRİFT (font) tənzimləmələrini saxlayır.
+// Material Design 3-də mətn stilləri əvvəlcədən adlandırılıb (bodyLarge,
+// titleLarge, labelSmall və s.) - biz "Text(...)" yazanda Compose avtomatik
+// düzgün ölçü/qalınlıq seçir, biz hər dəfə fontSize yazmaq məcburiyyətində qalmırıq.
+//
+// Hazırda yalnız "bodyLarge" (əsas mətn üçün) fərdiləşdirilib, qalanları
+// Material-ın standart dəyərlərini istifadə edir.
 val Typography = Typography(
     bodyLarge = TextStyle(
         fontFamily = FontFamily.Default,
@@ -15,7 +21,7 @@ val Typography = Typography(
         lineHeight = 24.sp,
         letterSpacing = 0.5.sp
     )
-    /* Other default text styles to override
+    /* Digər standart mətn stillərini burada dəyişmək olar (hazırda deaktivdir):
     titleLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,

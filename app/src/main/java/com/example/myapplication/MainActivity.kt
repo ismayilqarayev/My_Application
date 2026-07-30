@@ -40,31 +40,64 @@ import com.example.myapplication.BuildConfig
 import com.example.myapplication.ui.theme.MyApplicationTheme
 import java.util.Locale
 
+// ==========================================================================
+// BU FAYL TƏTBIQIN BÜTÜN EKRANLARINI (Compose UI) SAXLAYIR.
+// Burada YALNIZ görünüş var - hansı düymə hara basılır, nə rəngdədir və s.
+// Məntiq (Firebase, hesablama, taймer) TestViewModel.kt-dədir, bu fayl
+// yalnız oradakı state-ə "baxıb" ekranı çəkir.
+//
+// Compose necə işləyir (qısaca): hər "@Composable" funksiya bir ekran
+// hissəsini təsvir edir. İçindəki dəyər (state) dəyişəndə, Compose YALNIZ
+// dəyişən hissəni yenidən çəkir - bütün ekranı yox.
+// ==========================================================================
+
+/**
+ * Tətbiqin giriş nöqtəsi (Android bu sinifi ilk açır).
+ * Burada başqa heç nə yoxdur - sadəcə Compose "dünyasına" keçid edir
+ * və TestApp() adlı əsas ekranı göstərir.
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge()   // ekranı tam ekran (status bar-ın altına qədər) çəkməyə imkan verir
         setContent {
-            MyApplicationTheme {
+            MyApplicationTheme {   // rəng/şrift temasını bütün tətbiqə tətbiq edir (bax: ui/theme/ qovluğu)
                 TestApp()
             }
         }
     }
 }
 
+/**
+ * Tətbiqin ƏSAS "yönləndirici"si (router).
+ * "viewModel.screenState" dəyişəndə, aşağıdakı "when" bloku hansı ekranın
+ * göstəriləcəyini seçir. Yəni bütün ekran keçidləri (navigation) bu bir
+ * funksiyanın içindən idarə olunur.
+ *
+ * "viewModel: TestViewModel = viewModel()" - bu, Android-ə deyir: "mənə
+ * TestViewModel-in bir nüsxəsini ver". Android bunu avtomatik yaradır və
+ * ekran fırlansa belə (rotation) eyni nüsxəni saxlayır.
+ */
 @Composable
 fun TestApp(viewModel: TestViewModel = viewModel()) {
+    // Ödəniş dialoqunun görünüb-görünməməsini idarə edən yerli (local) state.
+    // Bu, ViewModel-də deyil, burada saxlanılır, çünki sadəcə "dialoq açıqdır/bağlıdır"
+    // sualının cavabıdır - Firebase-ə aid deyil.
     var showPaymentDialog by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
+        // "AnimatedContent" - ekranlar arasında keçiddə yumşaq keçid effekti (fade) yaradır
         AnimatedContent(
             targetState = viewModel.screenState,
             transitionSpec = { fadeIn() togetherWith fadeOut() },
             label = "ScreenTransition"
         ) { state ->
+            // Hər bir ekran vəziyyətinə uyğun composable-ı çağırırıq.
+            // Diqqət: heç bir yerdə "başqa ekrana keç" məntiqi yoxdur -
+            // sadəcə viewModel.screenState-i dəyişirik, qalanını Compose edir.
             when (state) {
                 ScreenState.Registration -> RegistrationScreen(
                     onRegister = viewModel::register,
@@ -73,9 +106,11 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                 ScreenState.CategorySelection -> CategorySelectionScreen(
                     isUnlocked = viewModel.isUnlocked,
                     onCategorySelected = viewModel::selectCategory,
-                    onLockedClick = { showPaymentDialog = true }
+                    onLockedClick = { showPaymentDialog = true }   // kilidli sınağa klik -> ödəniş dialoqu aç
                 )
                 ScreenState.Testing -> {
+                    // Suallar hələ yüklənməyibsə (boşdursa), heç nə göstərmirik ki,
+                    // "IndexOutOfBounds" xətası olmasın (aşağıda questions[index] istifadə olunur)
                     if (viewModel.questions.isNotEmpty()) {
                         QuestionScreen(
                             question = viewModel.questions[viewModel.currentQuestionIndex],
@@ -102,6 +137,8 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
             }
         }
 
+        // Bu blok "when" bloklarının XARİCİNDƏDİR - yəni hansı ekranda olursa
+        // olsun, xəta varsa bu AlertDialog onun ÜZƏRİNDƏ görünür.
         viewModel.errorMessage?.let { message ->
             AlertDialog(
                 onDismissRequest = viewModel::clearError,
@@ -113,22 +150,30 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
             )
         }
 
+        // Eyni məntiqlə, ödəniş dialoqu da bütün ekranların üzərində göstərilə bilər
         if (showPaymentDialog) {
             PaymentDialog(viewModel = viewModel, onDismiss = { showPaymentDialog = false })
         }
     }
 }
 
+/**
+ * Tətbiqin İLK ekranı: şagird ad-soyadını daxil edir.
+ * Sağ-alt küncdəki gizli (şəffaf) parametr ikonu admin girişini açır.
+ */
 @Composable
 fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () -> Unit) {
+    // Bu ekrana məxsus, müvəqqəti (yalnız bu ekran açıq olduqca yaşayan) state-lər.
+    // "remember" - Compose-a deyir: "bu dəyəri, ekran yenidən çəkilsə belə, saxla".
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
-    
-    // Admin girişi üçün state-lər
-    var showAdminLogin by remember { mutableStateOf(false) }
-    var password by remember { mutableStateOf("") }
-    var isError by remember { mutableStateOf(false) }
 
+    // Admin girişi üçün state-lər
+    var showAdminLogin by remember { mutableStateOf(false) }   // parol dialoqu görünsün/görünməsin
+    var password by remember { mutableStateOf("") }
+    var isError by remember { mutableStateOf(false) }           // yanlış parol yazılıbsa true olur
+
+    // Admin giriş dialoqu (parol soruşan pəncərə)
     if (showAdminLogin) {
         AlertDialog(
             onDismissRequest = { showAdminLogin = false },
@@ -139,9 +184,9 @@ fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () ->
                     Spacer(modifier = Modifier.height(16.dp))
                     OutlinedTextField(
                         value = password,
-                        onValueChange = { 
+                        onValueChange = {
                             password = it
-                            isError = false
+                            isError = false   // yenidən yazmağa başlayanda köhnə xəta mesajını gizlət
                         },
                         label = { Text("Parol") },
                         singleLine = true,
@@ -162,6 +207,8 @@ fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () ->
             confirmButton = {
                 Button(
                     onClick = {
+                        // Parol BuildConfig-dən oxunur (local.properties -> ADMIN_PASSWORD),
+                        // koda "hardcode" edilməyib ki, mənbə koduna baxan hər kəs görməsin.
                         if (password == BuildConfig.ADMIN_PASSWORD) {
                             showAdminLogin = false
                             onAdminClick()
@@ -182,6 +229,7 @@ fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () ->
         )
     }
 
+    // Ekranın əsas gövdəsi: gradient fon + ortada qeydiyyat kartı
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -222,6 +270,7 @@ fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () ->
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(32.dp))
+                    // Ad sahəsi
                     OutlinedTextField(
                         value = firstName,
                         onValueChange = { firstName = it },
@@ -230,6 +279,7 @@ fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () ->
                         shape = RoundedCornerShape(12.dp)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
+                    // Soyad sahəsi
                     OutlinedTextField(
                         value = lastName,
                         onValueChange = { lastName = it },
@@ -244,6 +294,7 @@ fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () ->
                             .fillMaxWidth()
                             .height(56.dp),
                         shape = RoundedCornerShape(12.dp),
+                        // Ad və soyad boş olduqca düymə deaktiv qalır (basıla bilməz)
                         enabled = firstName.isNotBlank() && lastName.isNotBlank()
                     ) {
                         Text("İmtahana Başla", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -252,6 +303,8 @@ fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () ->
             }
         }
 
+        // Sağ-alt küncdə, demək olar ki, görünməyən (şəffaflığı 0.3) admin düyməsi.
+        // Adi istifadəçi bunu fərq etməz, amma admin bilərək klikləyə bilər.
         IconButton(
             onClick = { showAdminLogin = true },
             modifier = Modifier
@@ -259,14 +312,24 @@ fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () ->
                 .padding(16.dp)
         ) {
             Icon(
-                Icons.Default.Settings, 
-                contentDescription = "Admin", 
+                Icons.Default.Settings,
+                contentDescription = "Admin",
                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
             )
         }
     }
 }
 
+/**
+ * Kateqoriya (sınaq) seçimi ekranı: 1-dən 25-ə qədər sınaqları 3-lük
+ * sıralarla göstərir. 4-cü sınaqdan yuxarı, ödəniş edilməyibsə, kilidli olur.
+ *
+ * DİQQƏT: Bu funksiya bilərəkdən TestViewModel-i BİRBAŞA qəbul ETMİR -
+ * yalnız sadə parametrlər (Boolean, funksiyalar) alır. Bu, iki səbəbə görədir:
+ *  1) Android Studio-nun preview (canlı önizləmə) paneli əsl Firebase-ə
+ *     qoşula bilmir, ona görə TestViewModel-i birbaşa versək önizləmə xəta verir.
+ *  2) Composable-ı ViewModel-dən ayırmaq kodu daha təmiz və test edilə bilən edir.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategorySelectionScreen(
@@ -274,6 +337,7 @@ fun CategorySelectionScreen(
     onCategorySelected: (String) -> Unit,
     onLockedClick: () -> Unit
 ) {
+    // 25 ədəd "sınaq N" adlı kateqoriya siyahısı yaradılır (statik, hər dəfə eynidir)
     val categories = (1..25).map { "sınaq $it" to "📝" }
 
     Scaffold(
@@ -291,18 +355,20 @@ fun CategorySelectionScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState())   // 25 kateqoriya ekrana sığmaya bilər, ona görə skroll aktivdir
                 .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(8.dp))
-            
+
+            // Kateqoriyaları 3-lük qruplara bölüb, hər qrupu bir sətirdə göstəririk
             categories.chunked(3).forEach { rowCategories ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     rowCategories.forEach { (name, _) ->
+                        // "sınaq 7" -> 7 rəqəmini ayırırıq
                         val number = name.filter { it.isDigit() }.toIntOrNull() ?: 0
                         // Yalnız 1-3 üçün hazır sual dəsti var; 4-dən yuxarı yalnız ödənişdən sonra açılır
                         val isLocked = number >= 4 && !isUnlocked
@@ -311,13 +377,16 @@ fun CategorySelectionScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(vertical = 12.dp)
                         ) {
+                            // "Box" ilə kilid ikonunu kartın küncünə "yapışdırırıq" (TopEnd)
                             Box(contentAlignment = Alignment.TopEnd) {
                                 Surface(
                                     onClick = {
+                                        // Kilidli deyilsə - normal seçim; kilidlidirsə - ödəniş dialoqunu aç
                                         if (!isLocked) onCategorySelected(name) else onLockedClick()
                                     },
                                     modifier = Modifier.size(90.dp),
                                     shape = RoundedCornerShape(24.dp),
+                                    // Kilidli kartların rəngi solğun (surfaceVariant), açıq kartlar isə canlı rəngdə
                                     color = if (isLocked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
                                     tonalElevation = if (isLocked) 0.dp else 4.dp,
                                     shadowElevation = if (isLocked) 0.dp else 4.dp
@@ -331,12 +400,13 @@ fun CategorySelectionScreen(
                                         )
                                     }
                                 }
-                                
+
+                                // Kilidli kartların üzərində kiçik qırmızı "kilid" ikonu göstərilir
                                 if (isLocked) {
                                     Surface(
                                         modifier = Modifier
                                             .size(28.dp)
-                                            .offset(x = 6.dp, y = (-6).dp),
+                                            .offset(x = 6.dp, y = (-6).dp),   // kartın küncündən bir az kənara çıxsın deyə
                                         shape = CircleShape,
                                         color = MaterialTheme.colorScheme.error,
                                         shadowElevation = 4.dp
@@ -366,10 +436,25 @@ fun CategorySelectionScreen(
     }
 }
 
+/**
+ * 4-cü sınaqdan yuxarı bir kateqoriyaya klikləyəndə açılan ödəniş pəncərəsi.
+ *
+ * AXIN:
+ *  1) İstifadəçi telefon nömrəsini yazır, "Ödəniş et" düyməsinə basır
+ *  2) viewModel.initiatePayment() Cloud Function-u çağırır, checkout linki gəlir
+ *  3) Bu link Chrome Custom Tabs-da (aşağıdakı LaunchedEffect) açılır -
+ *     kart məlumatları HEÇ VAXT bizim tətbiqin daxilində deyil, birbaşa
+ *     Kapital Bank-ın öz səhifəsində daxil edilir (bu, təhlükəsizlik üçün vacibdir)
+ *  4) Ödəniş təsdiqlənəndə, viewModel.isUnlocked avtomatik true olur (Firebase-dən
+ *     canlı dinləmə sayəsində) və bu dialoq özü "Açıldı!" mesajına keçir
+ */
 @Composable
 fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
     val context = LocalContext.current
 
+    // "LaunchedEffect(viewModel.checkoutUrl)" - checkoutUrl dəyişən HƏR DƏFƏ
+    // (yəni yeni bir link gələndə) bu bloku bir dəfə işə salır.
+    // Beləliklə, link gələn kimi avtomatik brauzer açılır.
     LaunchedEffect(viewModel.checkoutUrl) {
         viewModel.checkoutUrl?.let { url ->
             CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
@@ -382,8 +467,10 @@ fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
         text = {
             Column {
                 if (viewModel.isUnlocked) {
+                    // Ödəniş artıq təsdiqlənib - sadəcə təbrik mesajı göstəririk
                     Text("Ödəniş təsdiqləndi, bütün sınaqlar artıq açıqdır.")
                 } else {
+                    // Ödəniş hələ edilməyib - telefon nömrəsi sahəsi və "Ödəniş et" düyməsi göstərilir
                     Text("4-cü sınaqdan etibarən bütün testlərə giriş üçün kart ilə ödəniş edin.")
                     Spacer(modifier = Modifier.height(16.dp))
                     OutlinedTextField(
@@ -391,10 +478,11 @@ fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
                         onValueChange = viewModel::updatePhoneNumber,
                         label = { Text("Telefon nömrəsi") },
                         singleLine = true,
-                        enabled = !viewModel.isProcessingPayment,
+                        enabled = !viewModel.isProcessingPayment,   // ödəniş gedərkən sahəni redaktə etməyə qoymuruq
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
+                    // Ödəniş linki gözlənilərkən kiçik "gözlənilir" göstəricisi
                     if (viewModel.isProcessingPayment) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -408,8 +496,10 @@ fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
         },
         confirmButton = {
             if (viewModel.isUnlocked) {
+                // Açılıb - "Bağla" düyməsi kifayətdir
                 TextButton(onClick = onDismiss) { Text("Bağla") }
             } else {
+                // Hələ açılmayıb - "Ödəniş et" düyməsi (telefon boş olduqca deaktivdir)
                 Button(
                     onClick = viewModel::initiatePayment,
                     enabled = !viewModel.isProcessingPayment && viewModel.phoneNumber.isNotBlank()
@@ -417,6 +507,7 @@ fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
             }
         },
         dismissButton = {
+            // Açılıbsa "Bağla" düyməsi artıq confirmButton-dadır, ikisini birdən göstərməyə ehtiyac yoxdur
             if (!viewModel.isUnlocked) {
                 TextButton(onClick = onDismiss) { Text("Bağla") }
             }
@@ -424,6 +515,10 @@ fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
     )
 }
 
+/**
+ * Admin paneli: gizli parol ilə daxil olan admin buradan yeni suallar əlavə edir.
+ * Hər sual: kateqoriya, (istəyə bağlı) şəkil, mətn, 4 variant və düzgün cavab.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminScreen(
@@ -431,15 +526,16 @@ fun AdminScreen(
     onBack: () -> Unit,
     onUpload: (String, String, List<String>, Int, Uri?) -> Unit
 ) {
-    var category by remember { mutableStateOf("sınaq 1") }
-    var text by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("sınaq 1") }   // hansı sınağa sual əlavə olunur
+    var text by remember { mutableStateOf("") }                // sualın mətni
     var option1 by remember { mutableStateOf("") }
     var option2 by remember { mutableStateOf("") }
     var option3 by remember { mutableStateOf("") }
     var option4 by remember { mutableStateOf("") }
-    var correctIndex by remember { mutableIntStateOf(0) }
-    var imageUri by remember { mutableStateOf<Uri?>(null) }
-    
+    var correctIndex by remember { mutableIntStateOf(0) }       // hansı variant (0-3) düzgündür
+    var imageUri by remember { mutableStateOf<Uri?>(null) }     // seçilmiş şəklin telefon daxilindəki ünvanı
+
+    // Telefonun qalereyasından şəkil seçmək üçün "launcher" (Android-in hazır alətidir)
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         imageUri = uri
     }
@@ -462,6 +558,7 @@ fun AdminScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // 25 kateqoriyanı üfüqi sürüşdürülə bilən "çip" (chip) siyahısı kimi göstəririk
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -481,6 +578,7 @@ fun AdminScreen(
 
             Spacer(Modifier.height(24.dp))
 
+            // Şəkil seçmə qutusu: klikləyəndə qalereya açılır, seçilibsə önizləmə göstərilir
             Box(
                 modifier = Modifier
                     .size(200.dp)
@@ -501,6 +599,7 @@ fun AdminScreen(
 
             Spacer(Modifier.height(24.dp))
 
+            // Sualın mətni üçün giriş sahəsi
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
@@ -508,14 +607,16 @@ fun AdminScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp)
             )
-            
+
             Spacer(Modifier.height(24.dp))
-            
+
             Text("Variantlar (Düzgün olanı seçin):", modifier = Modifier.align(Alignment.Start), fontWeight = FontWeight.Bold)
-            
+
+            // 4 variantı və onların "dəyişdirici" (setter) funksiyalarını siyahı şəklində
+            // saxlamaq, aşağıdakı "forEachIndexed" ilə TƏKRARSIZ (eyni kodu 4 dəfə yazmadan) işləməyə imkan verir
             val options = listOf(option1, option2, option3, option4)
             val setters = listOf<(String) -> Unit>({ option1 = it }, { option2 = it }, { option3 = it }, { option4 = it })
-            
+
             options.forEachIndexed { index, opt ->
                 Row(
                     modifier = Modifier
@@ -523,6 +624,7 @@ fun AdminScreen(
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Radio düyməsi: yalnız BİR variant "düzgün" seçilə bilər
                     RadioButton(selected = correctIndex == index, onClick = { correctIndex = index })
                     OutlinedTextField(
                         value = opt,
@@ -542,9 +644,10 @@ fun AdminScreen(
                     .fillMaxWidth()
                     .height(60.dp),
                 shape = RoundedCornerShape(16.dp),
+                // Sual mətni və ən azı 2 variant doldurulmayınca, yüklənərkən isə düymə deaktivdir
                 enabled = !isLoading && text.isNotBlank() && option1.isNotBlank() && option2.isNotBlank()
             ) {
-                if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp)) 
+                if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
                 else Text("Bazada Yadda Saxla", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(32.dp))
@@ -552,6 +655,11 @@ fun AdminScreen(
     }
 }
 
+/**
+ * İmtahan zamanı göstərilən əsas sual ekranı.
+ * Yuxarıda: sual nömrəsi, ümumi sayı, geri sayan taймer, tərəqqi zolağı (progress bar).
+ * Aşağıda: sualın özü (və varsa şəkli) və cavab variantları.
+ */
 @Composable
 fun QuestionScreen(
     question: Question,
@@ -573,6 +681,7 @@ fun QuestionScreen(
                         Text("Sual $currentNum", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                         Text("Ümumi: $totalNum", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    // Vaxt qutusu: 30 saniyədən az qalanda rəngi qırmızıya (xəbərdarlıq rənginə) dəyişir
                     Surface(
                         color = if (timeLeft < 30) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
                         shape = RoundedCornerShape(20.dp)
@@ -582,12 +691,13 @@ fun QuestionScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                Icons.Default.Timer, 
-                                null, 
-                                modifier = Modifier.size(20.dp), 
+                                Icons.Default.Timer,
+                                null,
+                                modifier = Modifier.size(20.dp),
                                 tint = if (timeLeft < 30) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
                             )
                             Spacer(Modifier.width(8.dp))
+                            // Saniyəni "dəqiqə:saniyə" formatına çeviririk (məs. 125 saniyə -> "02:05")
                             Text(
                                 text = String.format(Locale.getDefault(), "%02d:%02d", timeLeft / 60, timeLeft % 60),
                                 fontWeight = FontWeight.Black,
@@ -597,6 +707,7 @@ fun QuestionScreen(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
+                // Tərəqqi zolağı: neçənci sualda olduğumuzu vizual göstərir (məs. 5/25 -> 20% dolu)
                 LinearProgressIndicator(
                     progress = { currentNum.toFloat() / totalNum },
                     modifier = Modifier
@@ -617,6 +728,7 @@ fun QuestionScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Sualın özü (və varsa şəkli) bir kart içində göstərilir
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(32.dp),
@@ -626,6 +738,7 @@ fun QuestionScreen(
                     modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Şəkil yalnız varsa göstərilir (admin sual əlavə edərkən şəkil seçməyə bilər)
                     if (question.imageUrl != null) {
                         AsyncImage(
                             model = question.imageUrl,
@@ -651,6 +764,8 @@ fun QuestionScreen(
 
             Spacer(Modifier.height(32.dp))
 
+            // Cavab variantları: hər birinə klikləmək dərhal "onAnswer(index)" çağırır -
+            // yəni "Təsdiqlə" düyməsi yoxdur, seçim edən kimi növbəti suala keçir
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 question.options.forEachIndexed { index, option ->
                     Surface(
@@ -675,14 +790,20 @@ fun QuestionScreen(
     }
 }
 
+/**
+ * İmtahan bitəndə göstərilən nəticə ekranı.
+ * Uğur şərti: xal >= ümumi sualların yarısı. Buna görə rənglər (yaşıl/qırmızı)
+ * və ikon (✓/✗) dəyişir.
+ */
 @Composable
 fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> Unit) {
     val isSuccess = score >= total / 2
-    
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
+                // Uğurlu olanda yaşılımtıl, uğursuz olanda qırmızımtıl fon
                 Brush.verticalGradient(
                     colors = if (isSuccess) listOf(Color(0xFFE8F5E9), Color.White) else listOf(Color(0xFFFFEBEE), Color.White)
                 )
@@ -713,9 +834,10 @@ fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> U
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Medium
             )
-            
+
             Spacer(Modifier.height(48.dp))
-            
+
+            // Xal kartı: böyük rəqəmlə "5 / 25" formatında nəticə
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(32.dp),
@@ -734,9 +856,9 @@ fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> U
                     )
                 }
             }
-            
+
             Spacer(Modifier.height(48.dp))
-            
+
             Button(
                 onClick = onRestart,
                 modifier = Modifier
@@ -751,6 +873,13 @@ fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> U
 }
 
 
+// ==========================================================================
+// AŞAĞIDAKILAR "PREVIEW" (ÖNİZLƏMƏ) FUNKSİYALARIDIR.
+// Bunlar tətbiqi telefonda İŞƏ SALMADAN, Android Studio-nun içindəki
+// "Design" panelində ekranlara baxmaq üçündür. Real istifadəçi bunları görmür,
+// bu, YALNIZ inkişaf zamanı (developer üçün) əlverişlilikdir.
+// ==========================================================================
+
 @Preview(showBackground = true)
 @Composable
 fun RegistrationPreview() {
@@ -763,6 +892,7 @@ fun RegistrationPreview() {
 @Composable
 fun CategorySelectionPreview() {
     MyApplicationTheme {
+        // "isUnlocked = false" - önizləmədə kilidlərin necə göründüyünü görmək üçün
         CategorySelectionScreen(isUnlocked = false, onCategorySelected = {}, onLockedClick = {})
     }
 }
