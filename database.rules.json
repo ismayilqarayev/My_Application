@@ -1,0 +1,22 @@
+{
+  "rules": {
+    "questions": {
+      ".read": true,
+      ".write": true
+    },
+    "results": {
+      ".read": true,
+      ".write": true
+    },
+    "purchases": {
+      "$phone": {
+        ".read": true,
+        ".write": false
+      }
+    },
+    "paymentOrders": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
