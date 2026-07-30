@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -26,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -34,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.example.myapplication.BuildConfig
 import com.example.myapplication.ui.theme.MyApplicationTheme
 import java.util.Locale
 
@@ -51,6 +54,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun TestApp(viewModel: TestViewModel = viewModel()) {
+    var showPaymentDialog by remember { mutableStateOf(false) }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -66,7 +71,9 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                     onAdminClick = { viewModel.screenState = ScreenState.Admin }
                 )
                 ScreenState.CategorySelection -> CategorySelectionScreen(
-                    onCategorySelected = viewModel::selectCategory
+                    isUnlocked = viewModel.isUnlocked,
+                    onCategorySelected = viewModel::selectCategory,
+                    onLockedClick = { showPaymentDialog = true }
                 )
                 ScreenState.Testing -> {
                     if (viewModel.questions.isNotEmpty()) {
@@ -93,6 +100,21 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                 ScreenState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                 else -> Box(Modifier.fillMaxSize(), Alignment.Center) { Text("Tezliklə...") }
             }
+        }
+
+        viewModel.errorMessage?.let { message ->
+            AlertDialog(
+                onDismissRequest = viewModel::clearError,
+                title = { Text("Xəta") },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = viewModel::clearError) { Text("Tamam") }
+                }
+            )
+        }
+
+        if (showPaymentDialog) {
+            PaymentDialog(viewModel = viewModel, onDismiss = { showPaymentDialog = false })
         }
     }
 }
@@ -140,7 +162,7 @@ fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () ->
             confirmButton = {
                 Button(
                     onClick = {
-                        if (password == "admin777") { // Admin parolu
+                        if (password == BuildConfig.ADMIN_PASSWORD) {
                             showAdminLogin = false
                             onAdminClick()
                         } else {
@@ -247,9 +269,13 @@ fun RegistrationScreen(onRegister: (String, String) -> Unit, onAdminClick: () ->
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CategorySelectionScreen(onCategorySelected: (String) -> Unit) {
+fun CategorySelectionScreen(
+    isUnlocked: Boolean,
+    onCategorySelected: (String) -> Unit,
+    onLockedClick: () -> Unit
+) {
     val categories = (1..25).map { "sınaq $it" to "📝" }
-    
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -278,15 +304,18 @@ fun CategorySelectionScreen(onCategorySelected: (String) -> Unit) {
                 ) {
                     rowCategories.forEach { (name, _) ->
                         val number = name.filter { it.isDigit() }.toIntOrNull() ?: 0
-                        val isLocked = number >= 6
-                        
+                        // Yalnız 1-3 üçün hazır sual dəsti var; 4-dən yuxarı yalnız ödənişdən sonra açılır
+                        val isLocked = number >= 4 && !isUnlocked
+
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(vertical = 12.dp)
                         ) {
                             Box(contentAlignment = Alignment.TopEnd) {
                                 Surface(
-                                    onClick = { if (!isLocked) onCategorySelected(name) },
+                                    onClick = {
+                                        if (!isLocked) onCategorySelected(name) else onLockedClick()
+                                    },
                                     modifier = Modifier.size(90.dp),
                                     shape = RoundedCornerShape(24.dp),
                                     color = if (isLocked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
@@ -335,6 +364,64 @@ fun CategorySelectionScreen(onCategorySelected: (String) -> Unit) {
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
+}
+
+@Composable
+fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+
+    LaunchedEffect(viewModel.checkoutUrl) {
+        viewModel.checkoutUrl?.let { url ->
+            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (viewModel.isUnlocked) "Açıldı!" else "Bütün sınaqları açın") },
+        text = {
+            Column {
+                if (viewModel.isUnlocked) {
+                    Text("Ödəniş təsdiqləndi, bütün sınaqlar artıq açıqdır.")
+                } else {
+                    Text("4-cü sınaqdan etibarən bütün testlərə giriş üçün kart ilə ödəniş edin.")
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = viewModel.phoneNumber,
+                        onValueChange = viewModel::updatePhoneNumber,
+                        label = { Text("Telefon nömrəsi") },
+                        singleLine = true,
+                        enabled = !viewModel.isProcessingPayment,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    if (viewModel.isProcessingPayment) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Ödəniş gözlənilir...")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (viewModel.isUnlocked) {
+                TextButton(onClick = onDismiss) { Text("Bağla") }
+            } else {
+                Button(
+                    onClick = viewModel::initiatePayment,
+                    enabled = !viewModel.isProcessingPayment && viewModel.phoneNumber.isNotBlank()
+                ) { Text("Ödəniş et") }
+            }
+        },
+        dismissButton = {
+            if (!viewModel.isUnlocked) {
+                TextButton(onClick = onDismiss) { Text("Bağla") }
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -676,7 +763,7 @@ fun RegistrationPreview() {
 @Composable
 fun CategorySelectionPreview() {
     MyApplicationTheme {
-        CategorySelectionScreen(onCategorySelected = {})
+        CategorySelectionScreen(isUnlocked = false, onCategorySelected = {}, onLockedClick = {})
     }
 }
 

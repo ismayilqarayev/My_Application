@@ -1,16 +1,19 @@
 package com.example.myapplication
 
+import android.app.Application
+import android.content.Context
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -21,7 +24,7 @@ enum class ScreenState {
     Registration, CategorySelection, Testing, Result, Loading, Admin
 }
 
-class TestViewModel : ViewModel() {
+class TestViewModel(application: Application) : AndroidViewModel(application) {
     var screenState by mutableStateOf(ScreenState.Registration)
     var userInfo by mutableStateOf<UserInfo?>(null)
     var currentQuestionIndex by mutableStateOf(0)
@@ -33,14 +36,114 @@ class TestViewModel : ViewModel() {
     private val database = FirebaseDatabase.getInstance("https://myapplication-223cacbf-default-rtdb.firebaseio.com")
     private val questionsRef = database.getReference("questions")
     private val resultsRef = database.getReference("results")
+    private val purchasesRef = database.getReference("purchases")
     private val storage = FirebaseStorage.getInstance()
     private val storageRef = storage.getReference("question_images")
+    private val functions = FirebaseFunctions.getInstance()
+    private val prefs = application.getSharedPreferences("exam_prefs", Context.MODE_PRIVATE)
 
     private val _questions = mutableStateListOf<Question>()
     val questions: List<Question> = _questions
-    
+
     var isLoadingQuestions by mutableStateOf(false)
         private set
+
+    var errorMessage by mutableStateOf<String?>(null)
+        private set
+
+    // 4-cü sınaqdan etibarən ödənişli açılış üçün
+    var phoneNumber by mutableStateOf("")
+        private set
+    var isUnlocked by mutableStateOf(false)
+        private set
+    var isProcessingPayment by mutableStateOf(false)
+        private set
+    var checkoutUrl by mutableStateOf<String?>(null)
+        private set
+    private var unlockListener: ValueEventListener? = null
+
+    init {
+        phoneNumber = prefs.getString(PREF_PHONE_NUMBER, "") ?: ""
+        if (sanitizePhone(phoneNumber).length >= 9) {
+            startListeningForUnlock(phoneNumber)
+        }
+    }
+
+    fun clearError() {
+        errorMessage = null
+    }
+
+    private fun sanitizePhone(phone: String) = phone.filter { it.isDigit() }
+
+    fun updatePhoneNumber(value: String) {
+        phoneNumber = value
+        prefs.edit().putString(PREF_PHONE_NUMBER, value).apply()
+    }
+
+    fun startListeningForUnlock(phone: String) {
+        val sanitized = sanitizePhone(phone)
+        if (sanitized.length < 9) return
+
+        unlockListener?.let { purchasesRef.removeEventListener(it) }
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                isUnlocked = snapshot.child("unlocked").getValue(Boolean::class.java) == true
+                if (isUnlocked) {
+                    isProcessingPayment = false
+                    checkoutUrl = null
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                errorMessage = "Açılış statusu yoxlanıla bilmədi: ${error.message}"
+            }
+        }
+        purchasesRef.child(sanitized).addValueEventListener(listener)
+        unlockListener = listener
+    }
+
+    // NOT: Bu, "initiatePayment" adlı bir Firebase Cloud Function çağırır.
+    // O funksiya hələ Kapital Bank merchant məlumatları ilə konfiqurasiya
+    // olunmayıb (bax: functions/kapitalBankClient.js) - merchant hesabı
+    // alındıqdan sonra deploy edilməlidir.
+    fun initiatePayment() {
+        val sanitized = sanitizePhone(phoneNumber)
+        if (sanitized.length < 9) {
+            errorMessage = "Zəhmət olmasa düzgün telefon nömrəsi daxil edin."
+            return
+        }
+
+        isProcessingPayment = true
+        functions.getHttpsCallable("initiatePayment")
+            .call(mapOf("phone" to sanitized))
+            .addOnSuccessListener { result ->
+                val url = (result.data as? Map<*, *>)?.get("checkoutUrl") as? String
+                if (url != null) {
+                    checkoutUrl = url
+                    startListeningForUnlock(sanitized)
+                } else {
+                    isProcessingPayment = false
+                    errorMessage = "Ödəniş linki alına bilmədi."
+                }
+            }
+            .addOnFailureListener { e ->
+                isProcessingPayment = false
+                errorMessage = "Ödəniş başladıla bilmədi: ${e.message}"
+            }
+    }
+
+    fun consumeCheckoutUrl() {
+        checkoutUrl = null
+    }
+
+    fun restorePurchase(phone: String) {
+        updatePhoneNumber(phone)
+        startListeningForUnlock(phone)
+    }
+
+    private companion object {
+        const val PREF_PHONE_NUMBER = "phone_number"
+    }
 
     fun uploadQuestion(
         category: String,
@@ -77,6 +180,7 @@ class TestViewModel : ViewModel() {
                 screenState = ScreenState.CategorySelection
             } catch (e: Exception) {
                 isLoadingQuestions = false
+                errorMessage = "Sual yadda saxlanıla bilmədi: ${e.message}"
             }
         }
     }
@@ -113,6 +217,8 @@ class TestViewModel : ViewModel() {
 
             override fun onCancelled(error: DatabaseError) {
                 isLoadingQuestions = false
+                errorMessage = "Suallar yüklənə bilmədi: ${error.message}"
+                screenState = ScreenState.CategorySelection
             }
         })
     }
@@ -204,5 +310,6 @@ class TestViewModel : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         timerJob?.cancel()
+        unlockListener?.let { purchasesRef.removeEventListener(it) }
     }
 }
