@@ -34,11 +34,24 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFileName = localProperties.getProperty("RELEASE_STORE_FILE")
+            if (storeFileName != null) {
+                storeFile = rootProject.file(storeFileName)
+                storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             optimization {
                 enable = false
             }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -63,10 +76,6 @@ dependencies {
     implementation("com.google.firebase:firebase-database-ktx")
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
-    implementation("com.google.firebase:firebase-functions-ktx")
-
-    // Ödəniş checkout səhifəsini açmaq üçün (Chrome Custom Tabs)
-    implementation("androidx.browser:browser:1.8.0")
 
     // Coil for Image Loading
     implementation("io.coil-kt:coil-compose:2.5.0")

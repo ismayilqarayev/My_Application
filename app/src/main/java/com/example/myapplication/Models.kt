@@ -21,11 +21,14 @@ data class Question(
 )
 
 /**
- * İmtahana giriş edən şagirdin ad-soyad məlumatını saxlayır.
- * Hazırda tətbiqdə şifrə/login sistemi yoxdur, ona görə bu, sadəcə
- * ekranda göstərmək və nəticələri Firebase-ə yazmaq üçün istifadə olunur.
+ * Telefon nömrəsi ilə təsdiqlənmiş (Firebase Phone Auth) şagirdin hesab
+ * məlumatını saxlayır. "users/<telefon>" düyünündə saxlanılır ki, eyni
+ * nömrə ilə başqa cihazdan giriş edəndə ad-soyad avtomatik bərpa olunsun.
+ *
+ * DİQQƏT: firstName/lastName-in defolt qiyməti olmalıdır ki, Firebase-in
+ * avtomatik çevirmə (deserialization) mexanizmi işləsin (bax: Question-dakı qeyd).
  */
 data class UserInfo(
-    val firstName: String,   // Ad
-    val lastName: String     // Soyad
+    val firstName: String = "",   // Ad
+    val lastName: String = ""     // Soyad
 )

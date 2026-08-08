@@ -1,7 +1,7 @@
 package com.example.myapplication
 
+import android.app.Activity
 import android.app.Application
-import android.content.Context
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -9,16 +9,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.FirebaseException
+import com.google.firebase.auth.EmailAuthProvider
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.PhoneAuthCredential
+import com.google.firebase.auth.PhoneAuthOptions
+import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
 import com.google.firebase.database.ValueEventListener
-import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.util.concurrent.TimeUnit
 
 // ==========================================================================
 // BU FAYL TƏTBIQIN "BEYNİ"DİR.
@@ -37,7 +44,10 @@ import kotlinx.coroutines.tasks.await
  * müvafiq Composable ekranı göstərir.
  */
 enum class ScreenState {
-    Registration,        // Ad-soyad daxil etmə ekranı (başlanğıc ekran)
+    RoleSelection,        // "Şagird" / "Müəllim" seçimi - başlanğıc ekran
+    PhoneEntry,           // Telefon nömrəsi daxil etmə (giriş)
+    CodeEntry,            // SMS ilə gələn təsdiq kodunu daxil etmə ekranı
+    NameEntry,            // (yalnız YENİ hesab üçün) ad-soyad daxil etmə ekranı
     CategorySelection,    // 25 sınaqdan birini seçmə ekranı
     Testing,              // Sualların göstərildiyi, cavab verilən ekran
     Result,               // İmtahan bitəndə nəticənin göstərildiyi ekran
@@ -47,9 +57,7 @@ enum class ScreenState {
 
 /**
  * "AndroidViewModel" - normal ViewModel-dən fərqli olaraq, Application (tətbiqin
- * özü) obyektinə çıxışı var. Bizə bu lazımdır ki, SharedPreferences (telefonda
- * kiçik məlumat saxlamaq üçün yaddaş) istifadə edə bilək - telefon nömrəsini
- * yadda saxlamaq üçün.
+ * özü) obyektinə çıxışı var. Bizə bu, Firebase Phone Auth üçün lazımdır.
  */
 class TestViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -59,7 +67,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     // ekranı avtomatik yenidən çək". Adi "var" olsaydı, dəyər dəyişəndə
     // ekran YENİLƏNMƏZDİ.
     // ---------------------------------------------------------------------
-    var screenState by mutableStateOf(ScreenState.Registration)   // hazırda hansı ekrandayıq
+    var screenState by mutableStateOf(ScreenState.RoleSelection)  // hazırda hansı ekrandayıq
     var userInfo by mutableStateOf<UserInfo?>(null)                // qeydiyyatdan keçən şagirdin ad-soyadı
     var currentQuestionIndex by mutableStateOf(0)                  // hazırkı sualın sıra nömrəsi (0-dan başlayır)
     var score by mutableStateOf(0)                                 // düzgün cavabların sayı
@@ -76,13 +84,15 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     private val questionsRef = database.getReference("questions")   // bütün sınaqların sualları burada saxlanılır
     private val resultsRef = database.getReference("results")       // hər imtahanın nəticəsi burada saxlanılır
     private val purchasesRef = database.getReference("purchases")   // kim ödəniş edib (telefon nömrəsi -> açıq/bağlı)
+    private val usersRef = database.getReference("users")           // telefon nömrəsinə bağlı hesab (ad-soyad) məlumatı
     private val storage = FirebaseStorage.getInstance()
     private val storageRef = storage.getReference("question_images") // sual şəkilləri burada saxlanılır
-    private val functions = FirebaseFunctions.getInstance()          // Cloud Functions (backend) çağırmaq üçün
 
-    // Telefonun öz yaddaşı (SharedPreferences) - tətbiq bağlanıb açılsa belə
-    // telefon nömrəsi burada saxlanılıb qalır.
-    private val prefs = application.getSharedPreferences("exam_prefs", Context.MODE_PRIVATE)
+    // Firebase Phone Auth - telefon nömrəsini SMS kodu ilə təsdiqləyir.
+    // Uğurlu girişdən sonra bu sessiya telefonda avtomatik yadda saxlanılır
+    // (FirebaseAuth SDK-nın öz işidir) - yəni eyni cihazda tətbiqi bağlayıb
+    // açsanız, yenidən kod daxil etməyə ehtiyac qalmır.
+    private val auth = FirebaseAuth.getInstance()
 
     // "_questions" gizli (private), xaricdən dəyişdirilə bilməz.
     // "questions" isə ona sadəcə BAXMAQ üçün açıq versiyadır (List, MutableList deyil).
@@ -97,15 +107,57 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         private set   // xəta olanda burada mətn görünür, MainActivity.kt bunu AlertDialog kimi göstərir
 
     // ---------------------------------------------------------------------
-    // ÖDƏNİŞ / AÇILIŞ MƏNTİQİ (4-cü sınaqdan yuxarı ödənişli hissə)
+    // GİRİŞ: TELEFON NÖMRƏSİ + SMS TƏSDİQİ (Firebase Phone Auth)
+    //
+    // Bu, tətbiqin "hesab" sistemidir: şagird telefon nömrəsini yazır, SMS ilə
+    // gələn kodu təsdiqləyir. Bu nömrə onun daimi hesab ID-si olur - başqa
+    // cihazdan eyni nömrə ilə giriş etsə, ad-soyadı və açılış statusu
+    // (aşağıda) avtomatik bərpa olunur.
     // ---------------------------------------------------------------------
-    var phoneNumber by mutableStateOf("")
+    var phoneNumber by mutableStateOf("")   // PhoneEntry ekranında yazılan (ölkə kodu olmadan, məs. "501234567")
         private set
+    var isSendingCode by mutableStateOf(false)      // SMS kodu göndərilərkən true (spinner üçün)
+        private set
+    var isVerifyingCode by mutableStateOf(false)    // kod təsdiqlənərkən true (spinner üçün)
+        private set
+    private var verificationId: String? = null      // Firebase-in verdiyi, kodu təsdiqləmək üçün lazım olan ID
+
+    // ---------------------------------------------------------------------
+    // GİRİŞ: NÖMRƏ + PAROL (SMS-siz, qayıdan istifadəçilər üçün)
+    //
+    // Yalnız İLK qeydiyyatda SMS tələb olunur. Həmin zaman istifadəçi bir
+    // parol da təyin edir (bax: register()) - bu parol Firebase Auth-un öz
+    // Email/Parol provayderinə "bağlanır" (linkWithCredential), telefon
+    // nömrəsindən düzəldilən süni (sintetik) email ünvanı ilə. Bu sayədə
+    // parolun özü heç vaxt bizim kodumuzda və ya Realtime Database-də
+    // saxlanılmır - onu Firebase öz təhlükəsiz (hash-lənmiş) formada saxlayır.
+    // Növbəti girişlərdə isə artıq SMS göndərilmir, sadəcə nömrə+parol
+    // Firebase-ə göndərilib yoxlanılır (signInWithEmailAndPassword).
+    // ---------------------------------------------------------------------
+    var isCheckingPhone by mutableStateOf(false)         // nömrənin qeydiyyatlı olub-olmadığı yoxlanılarkən true
+        private set
+    var isReturningUser by mutableStateOf(false)         // true olanda ekranda SMS əvəzinə parol sahəsi göstərilir
+        private set
+    var isLoggingInWithPassword by mutableStateOf(false) // parolla giriş edilərkən true (spinner üçün)
+        private set
+
+    /**
+     * Telefon nömrəsindən Firebase Auth üçün "sintetik" (real olmayan, amma
+     * düzgün formatlı) email ünvanı düzəldir. Firebase-in Email/Parol
+     * provayderi işləmək üçün email formatı tələb edir, amma bu ünvana heç
+     * vaxt real məktub getmir - sadəcə hər istifadəçi üçün unikal açar rolunu oynayır.
+     */
+    private fun fakeEmailFor(phoneKey: String) = "$phoneKey@myapplication-223cacbf.local"
+
+    // ---------------------------------------------------------------------
+    // ÖDƏNİŞ / AÇILIŞ MƏNTİQİ (4-cü sınaqdan yuxarı ödənişli hissə)
+    //
+    // QEYD: Bank API-si (Kapital Bank merchant hesabı) əvəzinə sadə kart-karta
+    // köçürmə istifadə olunur: şagird admininin kart nömrəsinə köçürmə edir,
+    // admin isə Admin panelindən əl ilə həmin telefon nömrəsini "açır".
+    // Bu, tamamilə PULSUZ (Spark plan) işləyir, backend/bank inteqrasiyası lazım deyil.
+    // ---------------------------------------------------------------------
     var isUnlocked by mutableStateOf(false)      // true olanda BÜTÜN sınaqlar açılır
-        private set
-    var isProcessingPayment by mutableStateOf(false)   // ödəniş linki gözlənilirkən true olur (spinner göstərmək üçün)
-        private set
-    var checkoutUrl by mutableStateOf<String?>(null)   // Kapital Bank-ın ödəniş səhifəsinin linki (alınan kimi brauzerdə açılır)
         private set
 
     // Firebase-dəki "purchases/<telefon>/unlocked" sahəsini CANLI (real-time) izləyən dinləyici.
@@ -114,12 +166,20 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * ViewModel ilk dəfə yaradılanda (tətbiq açılanda) işə düşür.
-     * Əvvəllər yadda saxlanmış telefon nömrəsi varsa, açılış statusunu yoxlayır.
+     * Əgər bu cihazda artıq giriş edilibsə (FirebaseAuth sessiyası saxlanılıb),
+     * telefon nömrəsi yenidən soruşulmadan birbaşa hesabı yükləyirik.
+     *
+     * "onlyIfStillOnRoleSelection = true" - bu YOXLAMA vacibdir: Firebase-ə
+     * sorğu (usersRef.get()) ASINXRON işlədiyi üçün, cavab gələnə qədər
+     * istifadəçi artıq "Şagird" və ya "Müəllim" düyməsinə basıb irəli
+     * keçmiş ola bilər. Bu yoxlama olmasaydı, avtomatik giriş cavabı
+     * gecikəndə istifadəçinin öz seçimini "əzib" onu gözlənilmədən başqa
+     * ekrana apara bilərdi (bax: RoleSelectionScreen-dən sonrakı "gözlənilməz
+     * tullanma" problemi).
      */
     init {
-        phoneNumber = prefs.getString(PREF_PHONE_NUMBER, "") ?: ""
-        if (sanitizePhone(phoneNumber).length >= 9) {
-            startListeningForUnlock(phoneNumber)
+        auth.currentUser?.phoneNumber?.let { phone ->
+            loadUserOrAskName(phone, onlyIfStillOnRoleSelection = true)
         }
     }
 
@@ -136,10 +196,187 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun sanitizePhone(phone: String) = phone.filter { it.isDigit() }
 
-    /** İstifadəçi ödəniş dialoqunda telefon nömrəsi yazdıqca çağırılır, həm də telefonun yaddaşına yazır. */
+    /**
+     * Bir telefon nömrəsini Firebase açarı kimi İSTİFADƏ OLUNAN, SABİT formata
+     * gətirir: ölkə kodu (994) daxil, cəmi rəqəmlər. Giriş edən şagirdlərin
+     * açarı (loadUserOrAskName vasitəsilə) HƏMİŞƏ bu formatdadır (Firebase-in
+     * "+994..." E.164 nömrəsindən sanitizasiya olunur). Admin isə "purchases"
+     * düyününə əl ilə yazarkən (manualUnlock) ölkə kodunu yazmaya da bilər -
+     * bu funksiya hər iki halı (9 rəqəmli yerli, ya da 12 rəqəmli tam) eyni
+     * açara gətirərək uyğunsuzluğun qarşısını alır.
+     */
+    private fun normalizePhoneKey(phone: String): String {
+        val digits = sanitizePhone(phone)
+        return if (digits.length == 9) "994$digits" else digits
+    }
+
+    /** PhoneEntry ekranında istifadəçi nömrə yazdıqca çağırılır. */
     fun updatePhoneNumber(value: String) {
         phoneNumber = value
-        prefs.edit().putString(PREF_PHONE_NUMBER, value).apply()
+        // Nömrəni dəyişəndə əvvəlki "qayıdan istifadəçi" (parol sahəsi) vəziyyətini
+        // sıfırlayırıq - yeni nömrə üçün yenidən yoxlama aparılmalıdır.
+        if (isReturningUser) isReturningUser = false
+    }
+
+    /**
+     * PhoneEntry ekranında "Davam et" düyməsinə basılanda çağırılır.
+     * Əvvəlcə bu nömrənin ARTIQ qeydiyyatdan keçib-keçmədiyini yoxlayır:
+     *  - Qeydiyyatlıdırsa (qayıdan istifadəçi) -> parol sahəsini göstəririk,
+     *    SMS göndərilmir.
+     *  - Qeydiyyatlı deyilsə (yeni istifadəçi) -> köhnə SMS axını başlayır.
+     */
+    fun checkPhoneAndProceed(activity: Activity) {
+        val sanitized = sanitizePhone(phoneNumber)
+        if (sanitized.length < 9) {
+            errorMessage = "Zəhmət olmasa düzgün telefon nömrəsi daxil edin."
+            return
+        }
+        val fullKey = normalizePhoneKey(sanitized)
+
+        isCheckingPhone = true
+        errorMessage = null
+        usersRef.child(fullKey).get()
+            .addOnSuccessListener { snapshot ->
+                isCheckingPhone = false
+                if (snapshot.exists()) {
+                    isReturningUser = true
+                } else {
+                    sendVerificationCode(activity)
+                }
+            }
+            .addOnFailureListener {
+                // Yoxlama uğursuz olsa belə istifadəçini bloklamayaq - SMS axını ilə davam edək
+                isCheckingPhone = false
+                sendVerificationCode(activity)
+            }
+    }
+
+    /**
+     * Qayıdan istifadəçi (isReturningUser = true) parolu yazıb "Daxil ol"
+     * düyməsinə basanda çağırılır. SMS-siz, birbaşa nömrə+parol ilə Firebase
+     * Auth-a daxil olur.
+     */
+    fun loginWithPassword(password: String) {
+        if (password.isBlank()) {
+            errorMessage = "Zəhmət olmasa parolu daxil edin."
+            return
+        }
+        val fullKey = normalizePhoneKey(phoneNumber)
+        isLoggingInWithPassword = true
+        errorMessage = null
+
+        auth.signInWithEmailAndPassword(fakeEmailFor(fullKey), password)
+            .addOnSuccessListener {
+                isLoggingInWithPassword = false
+                loadUserOrAskName(fullKey)
+            }
+            .addOnFailureListener {
+                isLoggingInWithPassword = false
+                errorMessage = "Giriş uğursuz oldu: nömrə və ya parol yanlışdır."
+            }
+    }
+
+    /**
+     * "Kod göndər" düyməsinə basılanda çağırılır. Azərbaycan ölkə kodunu
+     * (+994) avtomatik əlavə edib Firebase-ə SMS göndərməyi tapşırır.
+     *
+     * "activity" lazımdır, çünki Firebase bəzən (cihaz etibarlı deyilsə)
+     * reCAPTCHA təsdiqini ekранда göstərməli olur - bunun üçün Activity tələb edir.
+     */
+    fun sendVerificationCode(activity: Activity) {
+        val fullPhone = "+994${sanitizePhone(phoneNumber)}"
+        if (sanitizePhone(phoneNumber).length < 9) {
+            errorMessage = "Zəhmət olmasa düzgün telefon nömrəsi daxil edin."
+            return
+        }
+
+        isSendingCode = true
+        errorMessage = null
+
+        val options = PhoneAuthOptions.newBuilder(auth)
+            .setPhoneNumber(fullPhone)
+            .setTimeout(60L, TimeUnit.SECONDS)
+            .setActivity(activity)
+            .setCallbacks(object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+                // Bəzi cihazlarda Google Play Services kodu avtomatik tutub təsdiqləyir -
+                // bu halda istifadəçi kodu əl ilə yazmır, birbaşa giriş edilir.
+                override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                    signInWithCredential(credential)
+                }
+
+                override fun onVerificationFailed(e: FirebaseException) {
+                    isSendingCode = false
+                    errorMessage = "Kod göndərilə bilmədi: ${e.message}"
+                }
+
+                override fun onCodeSent(id: String, token: PhoneAuthProvider.ForceResendingToken) {
+                    isSendingCode = false
+                    verificationId = id
+                    screenState = ScreenState.CodeEntry
+                }
+            })
+            .build()
+
+        PhoneAuthProvider.verifyPhoneNumber(options)
+    }
+
+    /** İstifadəçi SMS ilə gələn 6 rəqəmli kodu yazıb "Təsdiqlə" basanda çağırılır. */
+    fun verifyCode(code: String) {
+        val id = verificationId
+        if (id == null) {
+            errorMessage = "Əvvəlcə kod tələb edin."
+            return
+        }
+        isVerifyingCode = true
+        signInWithCredential(PhoneAuthProvider.getCredential(id, code))
+    }
+
+    /** Həm avtomatik (onVerificationCompleted), həm də əl ilə (verifyCode) təsdiqdən sonra çağırılır. */
+    private fun signInWithCredential(credential: PhoneAuthCredential) {
+        auth.signInWithCredential(credential)
+            .addOnSuccessListener { result ->
+                isSendingCode = false
+                isVerifyingCode = false
+                result.user?.phoneNumber?.let { phone -> loadUserOrAskName(phone) }
+            }
+            .addOnFailureListener { e ->
+                isSendingCode = false
+                isVerifyingCode = false
+                errorMessage = "Kod yanlışdır: ${e.message}"
+            }
+    }
+
+    /**
+     * Telefon təsdiqləndikdən sonra çağırılır: "users/<telefon>" düyünündə
+     * bu nömrə üçün əvvəlcədən qeydiyyat varmı yoxlayır.
+     *  - Varsa (qayıdan istifadəçi) -> ad-soyadı bərpa edib birbaşa kateqoriya ekranına keçir
+     *  - Yoxdursa (yeni istifadəçi) -> ad-soyad soruşan ekrana keçir
+     * Hər iki halda açılış statusunu (purchases) canlı dinləməyə başlayır.
+     */
+    private fun loadUserOrAskName(fullPhone: String, onlyIfStillOnRoleSelection: Boolean = false) {
+        val sanitized = sanitizePhone(fullPhone)
+        phoneNumber = sanitized
+        startListeningForUnlock(sanitized)
+
+        usersRef.child(sanitized).get()
+            .addOnSuccessListener { snapshot ->
+                // Bax yuxarıdakı "init" bloku qeydinə: istifadəçi artıq özü
+                // naviqasiya edibsə, bu gecikmiş cavabın onu "əzməsinin" qarşısını alırıq
+                if (onlyIfStillOnRoleSelection && screenState != ScreenState.RoleSelection) return@addOnSuccessListener
+
+                val existing = snapshot.getValue(UserInfo::class.java)
+                if (existing != null) {
+                    userInfo = existing
+                    screenState = ScreenState.CategorySelection
+                } else {
+                    screenState = ScreenState.NameEntry
+                }
+            }
+            .addOnFailureListener {
+                if (onlyIfStillOnRoleSelection && screenState != ScreenState.RoleSelection) return@addOnFailureListener
+                // Şəbəkə xətası olsa belə, istifadəçini bloklamayaq - ad soruşub davam edək
+                screenState = ScreenState.NameEntry
+            }
     }
 
     /**
@@ -160,11 +397,6 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
             override fun onDataChange(snapshot: DataSnapshot) {
                 // Firebase-dən "unlocked: true/false" oxuyuruq, yoxdursa false sayırıq
                 isUnlocked = snapshot.child("unlocked").getValue(Boolean::class.java) == true
-                if (isUnlocked) {
-                    // Açılış təsdiqləndi - ödəniş prosesi bitdi, checkout linkinə artıq ehtiyac yoxdur
-                    isProcessingPayment = false
-                    checkoutUrl = null
-                }
             }
 
             override fun onCancelled(error: DatabaseError) {
@@ -176,67 +408,30 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Ödəniş prosesini BAŞLADIR.
-     * Bu funksiya birbaşa Kapital Bank ilə DANIŞMIR - əvəzinə bizim Firebase
-     * Cloud Function-umuzu ("initiatePayment") çağırır, o da öz növbəsində
-     * Kapital Bank ilə server tərəfindən (təhlükəsiz şəkildə) danışır.
+     * YALNIZ ADMİN PANELİNDƏN çağırılır. Şagird kart-karta köçürməni etdikdən
+     * sonra, admin bu funksiya ilə həmin telefon nömrəsini əl ilə "açır".
      *
-     * NİYƏ BELƏ? Çünki bank sirr açarını (secret/sertifikat) heç vaxt telefon
-     * tətbiqinin içində saxlamaq olmaz - kimsə tətbiqi "açıb" onu oğurlaya bilər.
-     * Ona görə bu həssas iş yalnız serverdə (functions/ qovluğunda) edilir.
+     * Bu, Firebase Realtime Database-ə BİRBAŞA (client-dən) yazır - heç bir
+     * bank inteqrasiyası/backend lazım deyil, ona görə tamamilə PULSUZ (Spark
+     * plan) işləyir.
      *
-     * QEYD: "initiatePayment" Cloud Function-u hələ Kapital Bank-ın həqiqi
-     * merchant məlumatları ilə konfiqurasiya olunmayıb (bax: functions/kapitalBankClient.js).
-     * Merchant hesabı alındıqdan sonra tamamlanıb deploy edilməlidir.
+     * TƏHLÜKƏSİZLİK QEYDİ: Admin paneli artıq parolla qorunur (bax:
+     * MainActivity.kt-də admin girişi), amma "purchases" düyünü Firebase
+     * qaydalarında client-dən yazıla bilən edilib (bax: database.rules.json).
+     * Bu, kiçik/şəxsi layihə üçün kifayət edən sadə bir modeldir.
      */
-    fun initiatePayment() {
-        val sanitized = sanitizePhone(phoneNumber)
+    fun manualUnlock(phone: String) {
+        val sanitized = normalizePhoneKey(phone)
         if (sanitized.length < 9) {
             errorMessage = "Zəhmət olmasa düzgün telefon nömrəsi daxil edin."
             return
         }
 
-        isProcessingPayment = true
-        // "getHttpsCallable" - Firebase-ə "bu adlı funksiyanı çağır" deyir.
-        // "call(...)" - funksiyaya telefon nömrəsini göndərir və serverdən cavab gözləyir.
-        functions.getHttpsCallable("initiatePayment")
-            .call(mapOf("phone" to sanitized))
-            .addOnSuccessListener { result ->
-                // Server bizə {"checkoutUrl": "...", "internalOrderId": "..."} formasında cavab qaytarır
-                val url = (result.data as? Map<*, *>)?.get("checkoutUrl") as? String
-                if (url != null) {
-                    checkoutUrl = url   // MainActivity.kt bunu görüb brauzerdə (Custom Tabs) açacaq
-                    startListeningForUnlock(sanitized)   // ödəniş bitəndə xəbər tutmaq üçün dinləməyə başlayırıq
-                } else {
-                    isProcessingPayment = false
-                    errorMessage = "Ödəniş linki alına bilmədi."
-                }
-            }
-            .addOnFailureListener { e ->
-                isProcessingPayment = false
-                errorMessage = "Ödəniş başladıla bilmədi: ${e.message}"
-            }
-    }
-
-    /** Checkout linki bir dəfə açıldıqdan sonra "istifadə olunub" kimi işarələnir ki, yenidən açılmasın. */
-    fun consumeCheckoutUrl() {
-        checkoutUrl = null
-    }
-
-    /**
-     * "Artıq ödəniş etmişəm" deyən istifadəçi üçün - telefon nömrəsini yenidən
-     * daxil edəndə, əvvəlki ödənişin statusunu Firebase-dən yenidən yoxlayır.
-     * Başqa cihazda ödəniş edilmişsə, bu telefonda da açılışı "bərpa edir".
-     */
-    fun restorePurchase(phone: String) {
-        updatePhoneNumber(phone)
-        startListeningForUnlock(phone)
-    }
-
-    // SharedPreferences-də istifadə olunan açarın adı bir yerdə saxlanılır ki,
-    // yazı səhvi (typo) riski olmasın.
-    private companion object {
-        const val PREF_PHONE_NUMBER = "phone_number"
+        purchasesRef.child(sanitized).setValue(
+            mapOf("unlocked" to true, "updatedAt" to ServerValue.TIMESTAMP)
+        ).addOnFailureListener { e ->
+            errorMessage = "Açılış qeyd edilə bilmədi: ${e.message}"
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -294,13 +489,92 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Admin panelindən BİR DƏFƏYƏ çoxlu sual əlavə etmək üçün. Hər sualı
+     * tək-tək admin panelindən yazmaq əvəzinə, admin bütün sualları xüsusi
+     * formatda bir mətn qutusuna yapışdırır, bu funksiya onları ayırıb
+     * Firebase-ə yazır.
+     *
+     * GÖZLƏNİLƏN FORMAT (hər sual boş sətirlə ayrılır):
+     *   Sualın mətni?
+     *   Səhv variant
+     *   *Düzgün variant
+     *   Səhv variant
+     *
+     * Yəni: bloqun birinci sətri - sualın mətni, qalan sətirlər - variantlar,
+     * düzgün variantın əvvəlinə "*" qoyulur.
+     */
+    fun uploadQuestionsBulk(category: String, rawText: String) {
+        // Sualları boş sətir(lər)ə görə ayırırıq (hər blok = bir sual)
+        val blocks = rawText.split(Regex("\n\\s*\n")).map { it.trim() }.filter { it.isNotBlank() }
+        if (blocks.isEmpty()) {
+            errorMessage = "Heç bir sual tapılmadı. Zəhmət olmasa formatı yoxlayın."
+            return
+        }
+
+        val baseId = System.currentTimeMillis().toInt()
+        val questions = blocks.mapIndexedNotNull { index, block ->
+            val lines = block.lines().map { it.trim() }.filter { it.isNotBlank() }
+            if (lines.size < 2) return@mapIndexedNotNull null   // sual + ən azı 1 variant lazımdır
+
+            val questionText = lines.first()
+            val optionLines = lines.drop(1)
+            // "*" ilə başlayan variantın sırasını tapırıq (yoxdursa ilk variant düzgün sayılır)
+            val correctIndex = optionLines.indexOfFirst { it.startsWith("*") }.let { if (it == -1) 0 else it }
+            val options = optionLines.map { it.removePrefix("*").trim() }
+
+            Question(id = baseId + index, text = questionText, options = options, correctAnswerIndex = correctIndex)
+        }
+
+        if (questions.isEmpty()) {
+            errorMessage = "Düzgün formatlı heç bir sual tapılmadı (hər sualın ən azı 1 variantı olmalıdır)."
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                isLoadingQuestions = true
+                // "updateChildren" bir sorğuda BİRDƏN ÇOX yeri eyni anda yazır -
+                // hər sual üçün ayrıca setValue çağırmaqdan daha səmərəlidir.
+                val updates: Map<String, Question> = questions.associateBy { it.id.toString() }
+                questionsRef.child(category).updateChildren(updates).await()
+                isLoadingQuestions = false
+                screenState = ScreenState.CategorySelection
+            } catch (e: Exception) {
+                isLoadingQuestions = false
+                errorMessage = "Toplu sual saxlanıla bilmədi: ${e.message}"
+            }
+        }
+    }
+
     // ---------------------------------------------------------------------
     // QEYDİYYAT VƏ KATEQORİYA SEÇİMİ
     // ---------------------------------------------------------------------
 
-    /** Qeydiyyat ekranında "İmtahana Başla" düyməsinə basılanda çağırılır. */
-    fun register(firstName: String, lastName: String) {
-        userInfo = UserInfo(firstName, lastName)
+    /**
+     * NameEntry ekranında (yalnız YENİ hesab üçün, telefon artıq təsdiqləndikdən
+     * sonra) "Davam et" düyməsinə basılanda çağırılır. Ad-soyadı "users/<telefon>"
+     * düyününə yazır ki, növbəti girişdə (bu və ya başqa cihazda) bərpa olunsun.
+     *
+     * Həmçinin bu addımda təyin edilən PAROLU Firebase Auth hesabına bağlayır
+     * (linkWithCredential) ki, növbəti girişlərdə artıq SMS lazım olmasın -
+     * bax: loginWithPassword().
+     */
+    fun register(firstName: String, lastName: String, password: String) {
+        val info = UserInfo(firstName, lastName)
+        userInfo = info
+        if (phoneNumber.isNotBlank()) {
+            usersRef.child(phoneNumber).setValue(info)
+        }
+
+        if (password.length >= 4) {
+            val credential = EmailAuthProvider.getCredential(fakeEmailFor(phoneNumber), password)
+            auth.currentUser?.linkWithCredential(credential)
+                ?.addOnFailureListener { e ->
+                    errorMessage = "Parol saxlanıla bilmədi: ${e.message}"
+                }
+        }
+
         screenState = ScreenState.CategorySelection
     }
 
@@ -421,6 +695,16 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
                 finishTest()   // vaxt bitdi - imtahan avtomatik bitirilir
             }
         }
+    }
+
+    /**
+     * İmtahan zamanı "Çıx" düyməsi ilə (təsdiqdən sonra) çağırılır.
+     * "finishTest()"-dən fərqli olaraq, nəticəni Firebase-ə YAZMIR - çünki
+     * imtahan tamamlanmayıb, sadəcə istifadəçi özü ləğv edib.
+     */
+    fun exitTest() {
+        timerJob?.cancel()
+        screenState = ScreenState.CategorySelection
     }
 
     /**

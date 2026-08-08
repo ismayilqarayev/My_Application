@@ -1,13 +1,14 @@
 {
   "project_info": {
-    "project_number": "1234567890",
-    "project_id": "my-application-id",
-    "storage_bucket": "my-application-id.appspot.com"
+    "project_number": "86826737432",
+    "firebase_url": "https://myapplication-223cacbf-default-rtdb.firebaseio.com",
+    "project_id": "myapplication-223cacbf",
+    "storage_bucket": "myapplication-223cacbf.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1234567890:android:abcdef123456",
+        "mobilesdk_app_id": "1:86826737432:android:65c3b497a1ed165745886d",
         "android_client_info": {
           "package_name": "com.example.myapplication"
         }
@@ -15,7 +16,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "dummy_key"
+          "current_key": "AIzaSyCYuBeAWlMNHOkgjgPWpqcoeNeQKIHCOvY"
         }
       ],
       "services": {

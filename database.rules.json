@@ -11,12 +11,14 @@
     "purchases": {
       "$phone": {
         ".read": true,
-        ".write": false
+        ".write": true
       }
     },
-    "paymentOrders": {
-      ".read": false,
-      ".write": false
+    "users": {
+      "$phone": {
+        ".read": true,
+        ".write": true
+      }
     }
   }
 }

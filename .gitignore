@@ -13,9 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
-
-# Firebase Cloud Functions
-/functions/node_modules
-/functions/.env
-firebase-debug.log
-.firebase
+*.jks
+*.keystore
