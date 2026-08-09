@@ -2,6 +2,7 @@ package com.example.myapplication
 
 import android.app.Application
 import android.net.Uri
+import android.provider.Settings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -150,6 +151,14 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun fakeEmailFor(phoneKey: String) = "$phoneKey@myapplication-223cacbf.local"
 
+    /**
+     * Bu cihaza xas, sabit bir ID qaytarır (Android-in "Settings.Secure.ANDROID_ID"
+     * dəyəri). Hesabların telefonlar arasında paylaşılmasının qarşısını almaq
+     * üçün istifadə olunur - bax: register() və loadUserOrAskName().
+     */
+    private fun currentDeviceId(): String =
+        Settings.Secure.getString(getApplication<Application>().contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown-device"
+
     // ---------------------------------------------------------------------
     // ÖDƏNİŞ / AÇILIŞ MƏNTİQİ (4-cü sınaqdan yuxarı ödənişli hissə)
     //
@@ -194,16 +203,38 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * YALNIZ ADMİN PANELİNDƏN çağırılır. Sınaqların sayını 1 artırır (məs.
-     * 25 -> 26), yəni "sınaq 26" adlı yeni bir kateqoriya həm şagirdlərin
-     * kateqoriya siyahısında, həm də admin panelinin sual yükləmə seçimində
-     * dərhal görünür.
+     * YALNIZ ADMİN PANELİNDƏN çağırılır. Yeni bir sınaq yaradır, istəyə bağlı
+     * öz adı ilə (məs. "Fizika").
+     *
+     * DİQQƏT: Sınağın DAXİLİ açarı (Firebase-dəki "questions/sınaq N" yolu,
+     * pulsuz/ödənişli məntiqi, silinmə/sıra izlənməsi) HƏMİŞƏ "sınaq N"
+     * formatında qalır - bu, mövcud koda toxunmadan işləməyə davam etsin
+     * deyə qəsdən belədir. "name" isə YALNIZ "meta/categoryNames/N" düyününə
+     * yazılan, ekranda "sınaq N" əvəzinə göstərilən bir etikettir.
+     *
+     * Nömrələmə: əvvəlcə silinmiş (boş qalmış) bir nömrə axtarır - varsa, ONU
+     * geri "canlandırır" (məs. hamısı silinibsə, yenidən "sınaq 1"-dən
+     * başlayır). Yoxdursa, sayğacı 1 artırıb təzə bir nömrə yaradır.
      */
-    fun addNewCategory() {
-        metaRef.child("categoryCount").setValue(categoryCount + 1)
-            .addOnFailureListener { e ->
-                errorMessage = "Yeni sınaq əlavə edilə bilmədi: ${e.message}"
-            }
+    fun addNewCategory(name: String = "") {
+        val freedNumber = (1..categoryCount).firstOrNull { it in deletedCategories }
+        val targetNumber = freedNumber ?: (categoryCount + 1)
+
+        if (freedNumber != null) {
+            metaRef.child("deletedCategories").child(freedNumber.toString()).removeValue()
+                .addOnFailureListener { e ->
+                    errorMessage = "Yeni sınaq əlavə edilə bilmədi: ${e.message}"
+                }
+        } else {
+            metaRef.child("categoryCount").setValue(categoryCount + 1)
+                .addOnFailureListener { e ->
+                    errorMessage = "Yeni sınaq əlavə edilə bilmədi: ${e.message}"
+                }
+        }
+
+        val trimmedName = name.trim()
+        val nameRef = metaRef.child("categoryNames").child(targetNumber.toString())
+        if (trimmedName.isNotBlank()) nameRef.setValue(trimmedName) else nameRef.removeValue()
     }
 
     // "meta/deletedCategories/<N>" düyünündə silinmiş sınaq nömrələri saxlanılır.
@@ -228,10 +259,37 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         deletedCategoriesListener = listener
     }
 
+    // "meta/categoryNames/<N>" düyünündə sınaqların öz (admin tərəfindən verilmiş)
+    // adları saxlanılır - məs. {1: "Fizika"}. Daxili açar həmişə "sınaq N" olaraq
+    // qalır (bax: addNewCategory), bu YALNIZ ekranda göstərilən etikətdir.
+    var categoryNames by mutableStateOf<Map<Int, String>>(emptyMap())
+        private set
+    private var categoryNamesListener: ValueEventListener? = null
+
+    private fun startListeningForCategoryNames() {
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                categoryNames = snapshot.children.mapNotNull { child ->
+                    val number = child.key?.toIntOrNull() ?: return@mapNotNull null
+                    val name = child.getValue(String::class.java) ?: return@mapNotNull null
+                    number to name
+                }.toMap()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                // Sükutla keçirik - eyni səbəbdən (bax: startListeningForCategoryCount)
+            }
+        }
+        metaRef.child("categoryNames").addValueEventListener(listener)
+        categoryNamesListener = listener
+    }
+
     /**
      * YALNIZ ADMİN PANELİNDƏN çağırılır. Bir sınağı - içindəki BÜTÜN suallarla
      * birlikdə - tamamilə silir. Sınaq nömrəsi "silinmiş" kimi işarələnir ki,
      * nə şagirdlərin siyahısında, nə də admin panelində bir daha görünməsin.
+     * Əvvəllər verilmiş xüsusi ad da silinir (nömrə sonra yenidən istifadə
+     * olunanda köhnə adı "miras" olaraq daşımasın deyə).
      */
     fun deleteCategory(category: String) {
         val number = category.filter { it.isDigit() }.toIntOrNull() ?: return
@@ -240,6 +298,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { e ->
                 errorMessage = "Sınaq silinə bilmədi: ${e.message}"
             }
+        metaRef.child("categoryNames").child(number.toString()).removeValue()
         _selectedCategoryQuestions.clear()
     }
 
@@ -271,6 +330,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     init {
         startListeningForCategoryCount()
         startListeningForDeletedCategories()
+        startListeningForCategoryNames()
         // Hesab email/parol provayderi ilə saxlanıldığı üçün telefon nömrəsi
         // Firebase-in "phoneNumber" sahəsində deyil, sintetik emailin özündə
         // gizlənib ("<nömrə>@..." - bax: fakeEmailFor) - ordan geri çıxarırıq.
@@ -404,6 +464,20 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
 
                 val existing = snapshot.getValue(UserInfo::class.java)
                 if (existing != null) {
+                    val thisDevice = currentDeviceId()
+                    if (existing.deviceId.isNotBlank() && existing.deviceId != thisDevice) {
+                        // Hesab ARTIQ başqa bir cihaza bağlıdır - paylaşılmanın qarşısını
+                        // almaq üçün bu cihazdan girişi rədd edirik (bax: Models.kt-də deviceId qeydi)
+                        auth.signOut()
+                        errorMessage = "Bu hesab artıq başqa bir telefonda istifadə olunur. Əgər bu sizin öz telefonunuzdursa, müəllimlə əlaqə saxlayıb hesabı sıfırlatdırın."
+                        screenState = ScreenState.RoleSelection
+                        return@addOnSuccessListener
+                    }
+                    if (existing.deviceId.isBlank()) {
+                        // Bu funksiya əlavə olunmazdan əvvəl qeydiyyatdan keçmiş köhnə hesab -
+                        // indi ilk daxil olan cihaza bağlayırıq
+                        usersRef.child(sanitized).child("deviceId").setValue(thisDevice)
+                    }
                     userInfo = existing
                     screenState = ScreenState.CategorySelection
                 } else {
@@ -470,6 +544,26 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         ).addOnFailureListener { e ->
             errorMessage = "Açılış qeyd edilə bilmədi: ${e.message}"
         }
+    }
+
+    /**
+     * YALNIZ ADMİN PANELİNDƏN çağırılır. Hesabın bağlı olduğu cihaz ID-sini
+     * silir (bax: Models.kt-də deviceId qeydi) - beləliklə növbəti dəfə
+     * istənilən telefon bu nömrə+parolla daxil olanda, həmin cihaz "ilk"
+     * sayılıb yenidən bağlanır. Şagirdin telefonu dəyişəndə/sındıqda istifadə
+     * olunur.
+     */
+    fun resetDevice(phone: String) {
+        val sanitized = normalizePhoneKey(phone)
+        if (sanitized.length < 9) {
+            errorMessage = "Zəhmət olmasa düzgün telefon nömrəsi daxil edin."
+            return
+        }
+
+        usersRef.child(sanitized).child("deviceId").setValue("")
+            .addOnFailureListener { e ->
+                errorMessage = "Cihaz sıfırlana bilmədi: ${e.message}"
+            }
     }
 
     // ---------------------------------------------------------------------
@@ -595,6 +689,9 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
      * təyin edilən parolla Firebase Auth-da yeni hesab yaradır, sonra
      * ad-soyadı "users/<telefon>" düyününə yazır ki, növbəti girişdə (bu və
      * ya başqa cihazda) bərpa olunsun.
+     *
+     * Hesab elə bu andaca bu cihaza "bağlanır" (deviceId) - başqa telefon eyni
+     * nömrə+parolla giriş etməyə çalışsa, rədd ediləcək (bax: loadUserOrAskName).
      */
     fun register(firstName: String, lastName: String, password: String) {
         if (password.length < 4) {
@@ -608,7 +705,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         auth.createUserWithEmailAndPassword(fakeEmailFor(fullKey), password)
             .addOnSuccessListener {
                 isRegistering = false
-                val info = UserInfo(firstName, lastName)
+                val info = UserInfo(firstName, lastName, currentDeviceId())
                 userInfo = info
                 phoneNumber = fullKey
                 usersRef.child(fullKey).setValue(info)
@@ -815,5 +912,6 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         unlockListener?.let { purchasesRef.removeEventListener(it) }
         categoryCountListener?.let { metaRef.child("categoryCount").removeEventListener(it) }
         deletedCategoriesListener?.let { metaRef.child("deletedCategories").removeEventListener(it) }
+        categoryNamesListener?.let { metaRef.child("categoryNames").removeEventListener(it) }
     }
 }

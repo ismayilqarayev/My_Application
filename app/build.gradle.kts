@@ -30,6 +30,16 @@ android {
             "ADMIN_PASSWORD",
             "\"${localProperties.getProperty("ADMIN_PASSWORD", "admin777")}\""
         )
+        buildConfigField(
+            "String",
+            "PAYMENT_CARD_NUMBER",
+            "\"${localProperties.getProperty("PAYMENT_CARD_NUMBER", "0000 0000 0000 0000")}\""
+        )
+        buildConfigField(
+            "String",
+            "PAYMENT_AMOUNT_AZN",
+            "\"${localProperties.getProperty("PAYMENT_AMOUNT_AZN", "5")}\""
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

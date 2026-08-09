@@ -21,14 +21,20 @@ data class Question(
 )
 
 /**
- * Telefon nömrəsi ilə təsdiqlənmiş (Firebase Phone Auth) şagirdin hesab
- * məlumatını saxlayır. "users/<telefon>" düyünündə saxlanılır ki, eyni
- * nömrə ilə başqa cihazdan giriş edəndə ad-soyad avtomatik bərpa olunsun.
+ * Telefon nömrəsi + parolla təsdiqlənmiş şagirdin hesab məlumatını saxlayır.
+ * "users/<telefon>" düyünündə saxlanılır ki, eyni nömrə ilə giriş edəndə
+ * ad-soyad avtomatik bərpa olunsun.
  *
- * DİQQƏT: firstName/lastName-in defolt qiyməti olmalıdır ki, Firebase-in
+ * "deviceId" - hesabın PAYLAŞILMASININ QARŞISINI ALMAQ üçündür: hesab ilk
+ * dəfə hansı cihazda aktivləşdirilirsə, o cihazın ID-si burada saxlanılır.
+ * Başqa bir cihaz eyni nömrə+parolla daxil olmağa çalışsa, bu ID uyğun
+ * gəlmədiyi üçün giriş rədd edilir (bax: TestViewModel.loadUserOrAskName).
+ *
+ * DİQQƏT: bütün sahələrin defolt qiyməti olmalıdır ki, Firebase-in
  * avtomatik çevirmə (deserialization) mexanizmi işləsin (bax: Question-dakı qeyd).
  */
 data class UserInfo(
     val firstName: String = "",   // Ad
-    val lastName: String = ""     // Soyad
+    val lastName: String = "",    // Soyad
+    val deviceId: String = ""     // Hesabın bağlı olduğu cihazın ID-si (boşdursa hələ heç bir cihaza bağlanmayıb)
 )

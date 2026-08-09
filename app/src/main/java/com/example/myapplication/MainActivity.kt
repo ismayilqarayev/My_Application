@@ -13,6 +13,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -22,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -146,6 +148,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                 ScreenState.CategorySelection -> CategorySelectionScreen(
                     categoryCount = viewModel.categoryCount,
                     deletedCategories = viewModel.deletedCategories,
+                    categoryNames = viewModel.categoryNames,
                     isUnlocked = viewModel.isUnlocked,
                     onCategorySelected = viewModel::selectCategory,
                     onLockedClick = { showPaymentDialog = true },   // kilidli sınağa klik -> ödəniş dialoqu aç
@@ -176,6 +179,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                     isLoading = viewModel.isLoadingQuestions,
                     categoryCount = viewModel.categoryCount,
                     deletedCategories = viewModel.deletedCategories,
+                    categoryNames = viewModel.categoryNames,
                     categoryQuestions = viewModel.selectedCategoryQuestions,
                     onAddCategory = viewModel::addNewCategory,
                     onCategoryChange = viewModel::refreshSelectedCategoryQuestions,
@@ -190,6 +194,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                     },
                     onUpload = viewModel::uploadQuestion,
                     onManualUnlock = viewModel::manualUnlock,
+                    onDeviceReset = viewModel::resetDevice,
                     onBulkUpload = viewModel::uploadQuestionsBulk
                 )
                 ScreenState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
@@ -428,6 +433,28 @@ fun RoleSelectionScreen(onStudentClick: () -> Unit, onTeacherClick: () -> Unit) 
                 }
             }
         }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 64.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = painterResource(R.drawable.prepared_by_photo),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Prepared by Ismayil Garayev",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -488,7 +515,7 @@ fun PhoneEntryScreen(
                 .padding(8.dp)
         ) {
             Icon(
-                Icons.Default.ArrowBack,
+                Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Geri",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -621,7 +648,7 @@ fun NameEntryScreen(isRegistering: Boolean, onRegister: (String, String, String)
                 .padding(8.dp)
         ) {
             Icon(
-                Icons.Default.ArrowBack,
+                Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Geri",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -726,6 +753,7 @@ fun NameEntryScreen(isRegistering: Boolean, onRegister: (String, String, String)
 fun CategorySelectionScreen(
     categoryCount: Int,
     deletedCategories: Set<Int>,
+    categoryNames: Map<Int, String>,
     isUnlocked: Boolean,
     onCategorySelected: (String) -> Unit,
     onLockedClick: () -> Unit,
@@ -753,14 +781,14 @@ fun CategorySelectionScreen(
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Sınaqlar", fontWeight = FontWeight.ExtraBold) },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent
                 ),
                 // Rol seçiminə qayıtma (digər ekranlarla eyni görünüşdə)
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.Default.ArrowBack,
+                            Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Geri",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -852,7 +880,9 @@ fun CategorySelectionScreen(
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = name,
+                                // Admin bu sınağa xüsusi ad veribsə (məs. "Fizika") onu göstəririk,
+                                // yoxdursa defolt "sınaq N" adı qalır
+                                text = categoryNames[number] ?: name,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
@@ -957,14 +987,16 @@ fun AdminScreen(
     isLoading: Boolean,
     categoryCount: Int,
     deletedCategories: Set<Int>,
+    categoryNames: Map<Int, String>,
     categoryQuestions: List<Question>,
-    onAddCategory: () -> Unit,
+    onAddCategory: (String) -> Unit,
     onCategoryChange: (String) -> Unit,
     onDeleteCategory: (String) -> Unit,
     onDeleteQuestion: (String, Int) -> Unit,
     onBack: () -> Unit,
     onUpload: (String, String, List<String>, Int, Uri?) -> Unit,
     onManualUnlock: (String) -> Unit,
+    onDeviceReset: (String) -> Unit,
     onBulkUpload: (String, String) -> Unit
 ) {
     var category by remember { mutableStateOf("sınaq 1") }   // hansı sınağa sual əlavə olunur
@@ -976,15 +1008,57 @@ fun AdminScreen(
     var correctIndex by remember { mutableIntStateOf(0) }       // hansı variant (0-3) düzgündür
     var imageUri by remember { mutableStateOf<Uri?>(null) }     // seçilmiş şəklin telefon daxilindəki ünvanı
     var showDeleteCategoryConfirm by remember { mutableStateOf(false) }  // "Sınağı sil" təsdiq dialoqu
+    var showAddCategoryDialog by remember { mutableStateOf(false) }      // "Yeni sınaq" ad soruşma dialoqu
+
+    // Seçilmiş kateqoriyanın nömrəsi + (varsa) admin tərəfindən verilmiş öz adı
+    val categoryNumber = category.filter { it.isDigit() }.toIntOrNull() ?: 0
+    val categoryDisplayName = categoryNames[categoryNumber] ?: category
 
     // Telefonun fiziki/jest "geri" hərəkəti də əvvəlki ekrana qaytarsın
     BackHandler(onBack = onBack)
+
+    if (showAddCategoryDialog) {
+        var newCategoryName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showAddCategoryDialog = false },
+            title = { Text("Yeni sınaq") },
+            text = {
+                Column {
+                    Text(
+                        "Sınağa ad verə bilərsiniz (məs. \"Fizika\"). Boş buraxsanız, sadəcə nömrə ilə adlanacaq.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = newCategoryName,
+                        onValueChange = { newCategoryName = it },
+                        label = { Text("Sınağın adı (istəyə bağlı)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val newCategoryNumber = (1..categoryCount).firstOrNull { it in deletedCategories } ?: (categoryCount + 1)
+                    onAddCategory(newCategoryName)
+                    category = "sınaq $newCategoryNumber"
+                    showAddCategoryDialog = false
+                }) { Text("Əlavə et") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCategoryDialog = false }) { Text("Ləğv et") }
+            }
+        )
+    }
 
     if (showDeleteCategoryConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteCategoryConfirm = false },
             title = { Text("Sınağı sil") },
-            text = { Text("\"$category\" sınağı və içindəki BÜTÜN suallar həmişəlik silinəcək. Davam edilsin?") },
+            text = { Text("\"$categoryDisplayName\" sınağı və içindəki BÜTÜN suallar həmişəlik silinəcək. Davam edilsin?") },
             confirmButton = {
                 TextButton(onClick = {
                     onDeleteCategory(category)
@@ -1024,7 +1098,7 @@ fun AdminScreen(
             TopAppBar(
                 title = { Text("Yeni Sual Əlavə Et", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
                 }
             )
         }
@@ -1050,15 +1124,12 @@ fun AdminScreen(
                     FilterChip(
                         selected = category == cat,
                         onClick = { category = cat },
-                        label = { Text(cat) },
+                        label = { Text(categoryNames[i] ?: cat) },
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
                 }
                 AssistChip(
-                    onClick = {
-                        onAddCategory()
-                        category = "sınaq ${categoryCount + 1}"
-                    },
+                    onClick = { showAddCategoryDialog = true },
                     label = { Text("+ Yeni sınaq") },
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
@@ -1074,7 +1145,7 @@ fun AdminScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "\"$category\" sınağının içindəki suallar (${categoryQuestions.size} / tövsiyə: 25)",
+                    text = "\"$categoryDisplayName\" sınağının içindəki suallar (${categoryQuestions.size} / tövsiyə: 25)",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (categoryQuestions.size >= 25) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1236,6 +1307,16 @@ fun AdminScreen(
             // sonra, admin bura həmin telefon nömrəsini yazıb "Aç" düyməsinə basır -
             // bank inteqrasiyası olmadan, birbaşa Firebase-ə yazılır (pulsuzdur).
             ManualUnlockSection(onUnlock = onManualUnlock)
+
+            Spacer(Modifier.height(32.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(24.dp))
+
+            // Cihaz sıfırlama bölməsi: hər hesab ilk aktivləşdiyi telefona
+            // "bağlanır" (paylaşılmanın qarşısını almaq üçün) - şagirdin telefonu
+            // dəyişəndə admin bura nömrəni yazıb sıfırlayır ki, yeni telefon
+            // həmin hesaba yenidən bağlana bilsin.
+            DeviceResetSection(onReset = onDeviceReset)
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -1354,6 +1435,65 @@ private fun ManualUnlockSection(onUnlock: (String) -> Unit) {
             Spacer(Modifier.height(8.dp))
             Text(
                 "\"$it\" nömrəsi açıldı.",
+                color = MaterialTheme.colorScheme.secondary,
+                fontSize = 13.sp
+            )
+        }
+    }
+}
+
+/**
+ * Admin panelinin altında görünən, cihaz sıfırlama bölməsi. Hər hesab ilk
+ * aktivləşdiyi telefona bağlandığı üçün (paylaşılmanın qarşısını almaq üçün),
+ * şagirdin telefonu dəyişəndə admin bura nömrəni yazıb sıfırlayır.
+ */
+@Composable
+private fun DeviceResetSection(onReset: (String) -> Unit) {
+    var phone by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf<String?>(null) }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "Cihazı sıfırla",
+            modifier = Modifier.align(Alignment.Start),
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            "Hər hesab ilk daxil olduğu telefona bağlanır (paylaşılmasın deyə). Şagirdin telefonu dəyişibsə, nömrəni bura yazıb sıfırlayın ki, yeni telefon həmin hesaba bağlana bilsin:",
+            modifier = Modifier.align(Alignment.Start),
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = phone,
+                onValueChange = {
+                    phone = it
+                    confirmation = null
+                },
+                label = { Text("Telefon nömrəsi") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = {
+                    onReset(phone)
+                    confirmation = phone
+                },
+                enabled = phone.isNotBlank(),
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("Sıfırla") }
+        }
+        confirmation?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "\"$it\" nömrəsinin cihazı sıfırlandı.",
                 color = MaterialTheme.colorScheme.secondary,
                 fontSize = 13.sp
             )
@@ -1707,7 +1847,7 @@ fun NameEntryPreview() {
 fun CategorySelectionPreview() {
     MyApplicationTheme {
         // "isUnlocked = false" - önizləmədə kilidlərin necə göründüyünü görmək üçün
-        CategorySelectionScreen(categoryCount = 25, deletedCategories = emptySet(), isUnlocked = false, onCategorySelected = {}, onLockedClick = {}, onAdminClick = {}, onBack = {})
+        CategorySelectionScreen(categoryCount = 25, deletedCategories = emptySet(), categoryNames = emptyMap(), isUnlocked = false, onCategorySelected = {}, onLockedClick = {}, onAdminClick = {}, onBack = {})
     }
 }
 
@@ -1719,6 +1859,7 @@ fun AdminPreview() {
             isLoading = false,
             categoryCount = 25,
             deletedCategories = emptySet(),
+            categoryNames = emptyMap(),
             categoryQuestions = emptyList(),
             onAddCategory = {},
             onCategoryChange = {},
@@ -1727,6 +1868,7 @@ fun AdminPreview() {
             onBack = {},
             onUpload = { _, _, _, _, _ -> },
             onManualUnlock = {},
+            onDeviceReset = {},
             onBulkUpload = { _, _ -> }
         )
     }
