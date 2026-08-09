@@ -1,6 +1,5 @@
 package com.example.myapplication
 
-import android.app.Activity
 import android.app.Application
 import android.net.Uri
 import androidx.compose.runtime.getValue
@@ -9,12 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.FirebaseException
-import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.PhoneAuthCredential
-import com.google.firebase.auth.PhoneAuthOptions
-import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
@@ -25,7 +19,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import java.util.concurrent.TimeUnit
 
 // ==========================================================================
 // BU FAYL TƏTBIQIN "BEYNİ"DİR.
@@ -45,9 +38,8 @@ import java.util.concurrent.TimeUnit
  */
 enum class ScreenState {
     RoleSelection,        // "Şagird" / "Müəllim" seçimi - başlanğıc ekran
-    PhoneEntry,           // Telefon nömrəsi daxil etmə (giriş)
-    CodeEntry,            // SMS ilə gələn təsdiq kodunu daxil etmə ekranı
-    NameEntry,            // (yalnız YENİ hesab üçün) ad-soyad daxil etmə ekranı
+    PhoneEntry,           // Telefon nömrəsi (və qayıdan istifadəçi üçün parol) daxil etmə
+    NameEntry,            // (yalnız YENİ hesab üçün) ad-soyad + parol təyin etmə ekranı
     CategorySelection,    // 25 sınaqdan birini seçmə ekranı
     Testing,              // Sualların göstərildiyi, cavab verilən ekran
     Result,               // İmtahan bitəndə nəticənin göstərildiyi ekran
@@ -57,7 +49,7 @@ enum class ScreenState {
 
 /**
  * "AndroidViewModel" - normal ViewModel-dən fərqli olaraq, Application (tətbiqin
- * özü) obyektinə çıxışı var. Bizə bu, Firebase Phone Auth üçün lazımdır.
+ * özü) obyektinə çıxışı var.
  */
 class TestViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -85,13 +77,15 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     private val resultsRef = database.getReference("results")       // hər imtahanın nəticəsi burada saxlanılır
     private val purchasesRef = database.getReference("purchases")   // kim ödəniş edib (telefon nömrəsi -> açıq/bağlı)
     private val usersRef = database.getReference("users")           // telefon nömrəsinə bağlı hesab (ad-soyad) məlumatı
+    private val metaRef = database.getReference("meta")             // tətbiqin ümumi tənzimləmələri (məs. sınaqların sayı)
     private val storage = FirebaseStorage.getInstance()
     private val storageRef = storage.getReference("question_images") // sual şəkilləri burada saxlanılır
 
-    // Firebase Phone Auth - telefon nömrəsini SMS kodu ilə təsdiqləyir.
+    // Firebase Auth - hesab telefon nömrəsindən düzəldilən sintetik email +
+    // istifadəçinin təyin etdiyi parol ilə idarə olunur (bax: fakeEmailFor).
     // Uğurlu girişdən sonra bu sessiya telefonda avtomatik yadda saxlanılır
     // (FirebaseAuth SDK-nın öz işidir) - yəni eyni cihazda tətbiqi bağlayıb
-    // açsanız, yenidən kod daxil etməyə ehtiyac qalmır.
+    // açsanız, yenidən daxil olmağa ehtiyac qalmır.
     private val auth = FirebaseAuth.getInstance()
 
     // "_questions" gizli (private), xaricdən dəyişdirilə bilməz.
@@ -106,39 +100,46 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     var errorMessage by mutableStateOf<String?>(null)
         private set   // xəta olanda burada mətn görünür, MainActivity.kt bunu AlertDialog kimi göstərir
 
+    // Admin panelində seçilmiş kateqoriyada HAZIRDA olan bütün sualların siyahısı.
+    // Bu sayədə admin sınağın İÇİNƏ baxıb (nə var, nə yoxdur görüb) elə həmin
+    // yerdən yeni sual əlavə edə bilir. Sual sayına heç bir sərt limit YOXDUR
+    // (25 sadəcə tövsiyə olunan hədəfdir) - imtahan vaxtı da buna uyğun uzanır
+    // (bax: startTest()).
+    private val _selectedCategoryQuestions = mutableStateListOf<Question>()
+    val selectedCategoryQuestions: List<Question> = _selectedCategoryQuestions
+
+    /** Admin panelində kateqoriya seçimi dəyişəndə (və hər sual yükləməsindən sonra) çağırılır. */
+    fun refreshSelectedCategoryQuestions(category: String) {
+        questionsRef.child(category).get()
+            .addOnSuccessListener { snapshot ->
+                _selectedCategoryQuestions.clear()
+                for (child in snapshot.children) {
+                    child.getValue(Question::class.java)?.let { _selectedCategoryQuestions.add(it) }
+                }
+            }
+            .addOnFailureListener { _selectedCategoryQuestions.clear() }
+    }
+
     // ---------------------------------------------------------------------
-    // GİRİŞ: TELEFON NÖMRƏSİ + SMS TƏSDİQİ (Firebase Phone Auth)
+    // GİRİŞ: TELEFON NÖMRƏSİ + PAROL (SMS TƏSDİQİ YOXDUR)
     //
-    // Bu, tətbiqin "hesab" sistemidir: şagird telefon nömrəsini yazır, SMS ilə
-    // gələn kodu təsdiqləyir. Bu nömrə onun daimi hesab ID-si olur - başqa
-    // cihazdan eyni nömrə ilə giriş etsə, ad-soyadı və açılış statusu
-    // (aşağıda) avtomatik bərpa olunur.
+    // Bu, tətbiqin "hesab" sistemidir: şagird telefon nömrəsini yazır.
+    //  - Nömrə YENİDİRSƏ -> ad-soyad + parol təyin edib qeydiyyatdan keçir.
+    //  - Nömrə ARTIQ QEYDİYYATLIDIRSA -> yalnız parolu yazıb daxil olur.
+    // Hesab, telefon nömrəsindən düzəldilən sintetik email ünvanı ilə Firebase
+    // Auth-un Email/Parol provayderində saxlanılır (bax: fakeEmailFor) - parolun
+    // özü heç vaxt bizim kodumuzda və ya Realtime Database-də saxlanılmır,
+    // Firebase onu öz təhlükəsiz (hash-lənmiş) formada saxlayır.
     // ---------------------------------------------------------------------
     var phoneNumber by mutableStateOf("")   // PhoneEntry ekranında yazılan (ölkə kodu olmadan, məs. "501234567")
         private set
-    var isSendingCode by mutableStateOf(false)      // SMS kodu göndərilərkən true (spinner üçün)
-        private set
-    var isVerifyingCode by mutableStateOf(false)    // kod təsdiqlənərkən true (spinner üçün)
-        private set
-    private var verificationId: String? = null      // Firebase-in verdiyi, kodu təsdiqləmək üçün lazım olan ID
-
-    // ---------------------------------------------------------------------
-    // GİRİŞ: NÖMRƏ + PAROL (SMS-siz, qayıdan istifadəçilər üçün)
-    //
-    // Yalnız İLK qeydiyyatda SMS tələb olunur. Həmin zaman istifadəçi bir
-    // parol da təyin edir (bax: register()) - bu parol Firebase Auth-un öz
-    // Email/Parol provayderinə "bağlanır" (linkWithCredential), telefon
-    // nömrəsindən düzəldilən süni (sintetik) email ünvanı ilə. Bu sayədə
-    // parolun özü heç vaxt bizim kodumuzda və ya Realtime Database-də
-    // saxlanılmır - onu Firebase öz təhlükəsiz (hash-lənmiş) formada saxlayır.
-    // Növbəti girişlərdə isə artıq SMS göndərilmir, sadəcə nömrə+parol
-    // Firebase-ə göndərilib yoxlanılır (signInWithEmailAndPassword).
-    // ---------------------------------------------------------------------
     var isCheckingPhone by mutableStateOf(false)         // nömrənin qeydiyyatlı olub-olmadığı yoxlanılarkən true
         private set
-    var isReturningUser by mutableStateOf(false)         // true olanda ekranda SMS əvəzinə parol sahəsi göstərilir
+    var isReturningUser by mutableStateOf(false)         // true olanda ekranda parol sahəsi göstərilir
         private set
     var isLoggingInWithPassword by mutableStateOf(false) // parolla giriş edilərkən true (spinner üçün)
+        private set
+    var isRegistering by mutableStateOf(false)           // yeni hesab yaradılarkən true (spinner üçün)
         private set
 
     /**
@@ -164,6 +165,96 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     // Bu sayədə ödəniş təsdiqlənən kimi, tətbiqi yenidən açmadan, ekran avtomatik dəyişir.
     private var unlockListener: ValueEventListener? = null
 
+    // ---------------------------------------------------------------------
+    // SINAQLARIN SAYI (Admin panelindən artırıla bilər)
+    //
+    // Əvvəllər "1..25" kodda sabit (hardcoded) idi. İndi Firebase-in
+    // "meta/categoryCount" sahəsində saxlanılır və CANLI dinlənilir - admin
+    // "Yeni sınaq əlavə et" düyməsinə basanda bu ədəd 1 artır, bütün
+    // istifadəçilərin ekranı (kod dəyişmədən, tətbiqi yenidən yükləmədən)
+    // avtomatik yenilənir.
+    // ---------------------------------------------------------------------
+    var categoryCount by mutableStateOf(25)
+        private set
+    private var categoryCountListener: ValueEventListener? = null
+
+    private fun startListeningForCategoryCount() {
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                categoryCount = snapshot.getValue(Int::class.java) ?: 25
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                // Sükutla keçirik - sınaqların sayı ikinci dərəcəli məlumatdır,
+                // xəta göstərib istifadəçini narahat etməyə dəyməz
+            }
+        }
+        metaRef.child("categoryCount").addValueEventListener(listener)
+        categoryCountListener = listener
+    }
+
+    /**
+     * YALNIZ ADMİN PANELİNDƏN çağırılır. Sınaqların sayını 1 artırır (məs.
+     * 25 -> 26), yəni "sınaq 26" adlı yeni bir kateqoriya həm şagirdlərin
+     * kateqoriya siyahısında, həm də admin panelinin sual yükləmə seçimində
+     * dərhal görünür.
+     */
+    fun addNewCategory() {
+        metaRef.child("categoryCount").setValue(categoryCount + 1)
+            .addOnFailureListener { e ->
+                errorMessage = "Yeni sınaq əlavə edilə bilmədi: ${e.message}"
+            }
+    }
+
+    // "meta/deletedCategories/<N>" düyünündə silinmiş sınaq nömrələri saxlanılır.
+    // Sınaqlar "1..categoryCount" ardıcıllığı ilə nömrələndiyi üçün, silinmiş bir
+    // sınağın nömrəsini sonrakıların üstünə "sürüşdürmək" (renumbering) əvəzinə,
+    // sadəcə onu bu siyahıda "gizlədirik" - kod sadə qalır, məlumat itkisi riski olmur.
+    var deletedCategories by mutableStateOf<Set<Int>>(emptySet())
+        private set
+    private var deletedCategoriesListener: ValueEventListener? = null
+
+    private fun startListeningForDeletedCategories() {
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                deletedCategories = snapshot.children.mapNotNull { it.key?.toIntOrNull() }.toSet()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                // Sükutla keçirik - eyni səbəbdən (bax: startListeningForCategoryCount)
+            }
+        }
+        metaRef.child("deletedCategories").addValueEventListener(listener)
+        deletedCategoriesListener = listener
+    }
+
+    /**
+     * YALNIZ ADMİN PANELİNDƏN çağırılır. Bir sınağı - içindəki BÜTÜN suallarla
+     * birlikdə - tamamilə silir. Sınaq nömrəsi "silinmiş" kimi işarələnir ki,
+     * nə şagirdlərin siyahısında, nə də admin panelində bir daha görünməsin.
+     */
+    fun deleteCategory(category: String) {
+        val number = category.filter { it.isDigit() }.toIntOrNull() ?: return
+        questionsRef.child(category).removeValue()
+        metaRef.child("deletedCategories").child(number.toString()).setValue(true)
+            .addOnFailureListener { e ->
+                errorMessage = "Sınaq silinə bilmədi: ${e.message}"
+            }
+        _selectedCategoryQuestions.clear()
+    }
+
+    /**
+     * YALNIZ ADMİN PANELİNDƏN çağırılır. Bir sınağın içindən TƏK bir sualı silir
+     * (bütün sınağı deyil). Silindikdən sonra siyahı avtomatik təzələnir.
+     */
+    fun deleteQuestion(category: String, questionId: Int) {
+        questionsRef.child(category).child(questionId.toString()).removeValue()
+            .addOnSuccessListener { refreshSelectedCategoryQuestions(category) }
+            .addOnFailureListener { e ->
+                errorMessage = "Sual silinə bilmədi: ${e.message}"
+            }
+    }
+
     /**
      * ViewModel ilk dəfə yaradılanda (tətbiq açılanda) işə düşür.
      * Əgər bu cihazda artıq giriş edilibsə (FirebaseAuth sessiyası saxlanılıb),
@@ -178,7 +269,12 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
      * tullanma" problemi).
      */
     init {
-        auth.currentUser?.phoneNumber?.let { phone ->
+        startListeningForCategoryCount()
+        startListeningForDeletedCategories()
+        // Hesab email/parol provayderi ilə saxlanıldığı üçün telefon nömrəsi
+        // Firebase-in "phoneNumber" sahəsində deyil, sintetik emailin özündə
+        // gizlənib ("<nömrə>@..." - bax: fakeEmailFor) - ordan geri çıxarırıq.
+        auth.currentUser?.email?.substringBefore("@")?.let { phone ->
             loadUserOrAskName(phone, onlyIfStillOnRoleSelection = true)
         }
     }
@@ -193,8 +289,16 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
      * Məsələn: "+994 55 123-45-67" -> "994551234567"
      * Bu lazımdır, çünki Firebase-in açar (key) adlarında bəzi simvollar
      * (".", "#", "$", "/") işlədilə bilməz.
+     *
+     * QEYD: İstifadəçilər çox vaxt yerli vərdişlə nömrənin əvvəlinə "0" yazır
+     * (məs. "0501234567" - yerli zəng vərdişi). Bu "0" ölkə kodu ilə birləşəndə
+     * ("+9940501234567") YANLIŞ/mövcud olmayan nömrə yaranır və SMS heç vaxt
+     * çatmır. Ona görə, dəqiq 10 rəqəm və "0" ilə başlayırsa, həmin "0"-ı atırıq.
      */
-    private fun sanitizePhone(phone: String) = phone.filter { it.isDigit() }
+    private fun sanitizePhone(phone: String): String {
+        val digits = phone.filter { it.isDigit() }
+        return if (digits.length == 10 && digits.startsWith("0")) digits.drop(1) else digits
+    }
 
     /**
      * Bir telefon nömrəsini Firebase açarı kimi İSTİFADƏ OLUNAN, SABİT formata
@@ -220,12 +324,11 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * PhoneEntry ekranında "Davam et" düyməsinə basılanda çağırılır.
-     * Əvvəlcə bu nömrənin ARTIQ qeydiyyatdan keçib-keçmədiyini yoxlayır:
-     *  - Qeydiyyatlıdırsa (qayıdan istifadəçi) -> parol sahəsini göstəririk,
-     *    SMS göndərilmir.
-     *  - Qeydiyyatlı deyilsə (yeni istifadəçi) -> köhnə SMS axını başlayır.
+     * Bu nömrənin ARTIQ qeydiyyatdan keçib-keçmədiyini yoxlayır:
+     *  - Qeydiyyatlıdırsa (qayıdan istifadəçi) -> parol sahəsini göstəririk.
+     *  - Qeydiyyatlı deyilsə (yeni istifadəçi) -> ad-soyad+parol ekranına keçir.
      */
-    fun checkPhoneAndProceed(activity: Activity) {
+    fun checkPhoneAndProceed() {
         val sanitized = sanitizePhone(phoneNumber)
         if (sanitized.length < 9) {
             errorMessage = "Zəhmət olmasa düzgün telefon nömrəsi daxil edin."
@@ -233,6 +336,11 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         }
         val fullKey = normalizePhoneKey(sanitized)
 
+        // DİQQƏT: "phoneNumber"-i burada tam açara ("994...") DƏYİŞMİRİK - bu ekranda
+        // (PhoneEntryScreen) hələ "+994 " prefiksi ilə göstərilir, əgər phoneNumber
+        // artıq "994" ilə başlasaydı, "+994 994..." kimi İKİQAT görünərdi. register()
+        // və loginWithPassword() öz aralarında normalizePhoneKey(phoneNumber) çağırıb
+        // tam açarı özləri hesabladığı üçün buna ehtiyac da yoxdur.
         isCheckingPhone = true
         errorMessage = null
         usersRef.child(fullKey).get()
@@ -241,13 +349,13 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
                 if (snapshot.exists()) {
                     isReturningUser = true
                 } else {
-                    sendVerificationCode(activity)
+                    screenState = ScreenState.NameEntry
                 }
             }
             .addOnFailureListener {
-                // Yoxlama uğursuz olsa belə istifadəçini bloklamayaq - SMS axını ilə davam edək
+                // Yoxlama uğursuz olsa belə istifadəçini bloklamayaq - qeydiyyat ekranı ilə davam edək
                 isCheckingPhone = false
-                sendVerificationCode(activity)
+                screenState = ScreenState.NameEntry
             }
     }
 
@@ -273,76 +381,6 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener {
                 isLoggingInWithPassword = false
                 errorMessage = "Giriş uğursuz oldu: nömrə və ya parol yanlışdır."
-            }
-    }
-
-    /**
-     * "Kod göndər" düyməsinə basılanda çağırılır. Azərbaycan ölkə kodunu
-     * (+994) avtomatik əlavə edib Firebase-ə SMS göndərməyi tapşırır.
-     *
-     * "activity" lazımdır, çünki Firebase bəzən (cihaz etibarlı deyilsə)
-     * reCAPTCHA təsdiqini ekранда göstərməli olur - bunun üçün Activity tələb edir.
-     */
-    fun sendVerificationCode(activity: Activity) {
-        val fullPhone = "+994${sanitizePhone(phoneNumber)}"
-        if (sanitizePhone(phoneNumber).length < 9) {
-            errorMessage = "Zəhmət olmasa düzgün telefon nömrəsi daxil edin."
-            return
-        }
-
-        isSendingCode = true
-        errorMessage = null
-
-        val options = PhoneAuthOptions.newBuilder(auth)
-            .setPhoneNumber(fullPhone)
-            .setTimeout(60L, TimeUnit.SECONDS)
-            .setActivity(activity)
-            .setCallbacks(object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-                // Bəzi cihazlarda Google Play Services kodu avtomatik tutub təsdiqləyir -
-                // bu halda istifadəçi kodu əl ilə yazmır, birbaşa giriş edilir.
-                override fun onVerificationCompleted(credential: PhoneAuthCredential) {
-                    signInWithCredential(credential)
-                }
-
-                override fun onVerificationFailed(e: FirebaseException) {
-                    isSendingCode = false
-                    errorMessage = "Kod göndərilə bilmədi: ${e.message}"
-                }
-
-                override fun onCodeSent(id: String, token: PhoneAuthProvider.ForceResendingToken) {
-                    isSendingCode = false
-                    verificationId = id
-                    screenState = ScreenState.CodeEntry
-                }
-            })
-            .build()
-
-        PhoneAuthProvider.verifyPhoneNumber(options)
-    }
-
-    /** İstifadəçi SMS ilə gələn 6 rəqəmli kodu yazıb "Təsdiqlə" basanda çağırılır. */
-    fun verifyCode(code: String) {
-        val id = verificationId
-        if (id == null) {
-            errorMessage = "Əvvəlcə kod tələb edin."
-            return
-        }
-        isVerifyingCode = true
-        signInWithCredential(PhoneAuthProvider.getCredential(id, code))
-    }
-
-    /** Həm avtomatik (onVerificationCompleted), həm də əl ilə (verifyCode) təsdiqdən sonra çağırılır. */
-    private fun signInWithCredential(credential: PhoneAuthCredential) {
-        auth.signInWithCredential(credential)
-            .addOnSuccessListener { result ->
-                isSendingCode = false
-                isVerifyingCode = false
-                result.user?.phoneNumber?.let { phone -> loadUserOrAskName(phone) }
-            }
-            .addOnFailureListener { e ->
-                isSendingCode = false
-                isVerifyingCode = false
-                errorMessage = "Kod yanlışdır: ${e.message}"
             }
     }
 
@@ -552,30 +590,35 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     // ---------------------------------------------------------------------
 
     /**
-     * NameEntry ekranında (yalnız YENİ hesab üçün, telefon artıq təsdiqləndikdən
-     * sonra) "Davam et" düyməsinə basılanda çağırılır. Ad-soyadı "users/<telefon>"
-     * düyününə yazır ki, növbəti girişdə (bu və ya başqa cihazda) bərpa olunsun.
-     *
-     * Həmçinin bu addımda təyin edilən PAROLU Firebase Auth hesabına bağlayır
-     * (linkWithCredential) ki, növbəti girişlərdə artıq SMS lazım olmasın -
-     * bax: loginWithPassword().
+     * NameEntry ekranında (yalnız YENİ hesab üçün) "İmtahana Başla" düyməsinə
+     * basılanda çağırılır. Telefon nömrəsindən düzəldilən sintetik email +
+     * təyin edilən parolla Firebase Auth-da yeni hesab yaradır, sonra
+     * ad-soyadı "users/<telefon>" düyününə yazır ki, növbəti girişdə (bu və
+     * ya başqa cihazda) bərpa olunsun.
      */
     fun register(firstName: String, lastName: String, password: String) {
-        val info = UserInfo(firstName, lastName)
-        userInfo = info
-        if (phoneNumber.isNotBlank()) {
-            usersRef.child(phoneNumber).setValue(info)
+        if (password.length < 4) {
+            errorMessage = "Parol ən azı 4 simvol olmalıdır."
+            return
         }
+        val fullKey = normalizePhoneKey(phoneNumber)
 
-        if (password.length >= 4) {
-            val credential = EmailAuthProvider.getCredential(fakeEmailFor(phoneNumber), password)
-            auth.currentUser?.linkWithCredential(credential)
-                ?.addOnFailureListener { e ->
-                    errorMessage = "Parol saxlanıla bilmədi: ${e.message}"
-                }
-        }
-
-        screenState = ScreenState.CategorySelection
+        isRegistering = true
+        errorMessage = null
+        auth.createUserWithEmailAndPassword(fakeEmailFor(fullKey), password)
+            .addOnSuccessListener {
+                isRegistering = false
+                val info = UserInfo(firstName, lastName)
+                userInfo = info
+                phoneNumber = fullKey
+                usersRef.child(fullKey).setValue(info)
+                startListeningForUnlock(fullKey)
+                screenState = ScreenState.CategorySelection
+            }
+            .addOnFailureListener { e ->
+                isRegistering = false
+                errorMessage = "Qeydiyyat uğursuz oldu: ${e.message}"
+            }
     }
 
     /** İstifadəçi bir sınaq (kateqoriya) seçəndə çağırılır. */
@@ -670,12 +713,17 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     // İMTAHAN AXINI: BAŞLAMA, TAYMER, CAVABLANDIRMA, BİTİRMƏ
     // ---------------------------------------------------------------------
 
-    /** Suallar yüklənib qurtaranda imtahanı sıfırdan başladır. */
+    /**
+     * Suallar yüklənib qurtaranda imtahanı sıfırdan başladır.
+     * Vaxt sual sayına mütənasibdir (hər sual üçün 12 saniyə - 25 sualda 5
+     * dəqiqəyə bərabərdir), ona görə admin bir kateqoriyaya 25-dən çox sual
+     * əlavə etsə belə, imtahan vaxtı avtomatik uzanır.
+     */
     private fun startTest() {
         screenState = ScreenState.Testing
         currentQuestionIndex = 0
         score = 0
-        timeLeft = 300 // 5 dəqiqə (25 sual üçün)
+        timeLeft = _questions.size * 12
         startTimer()
     }
 
@@ -708,11 +756,18 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * İstifadəçi bir cavab seçəndə çağırılır.
+     * İstifadəçi bir cavab seçəndə çağırılır (QuestionScreen düzgün/səhv
+     * animasiyasını göstərdikdən bir qədər sonra).
      * Düzgün cavabdırsa xalı artırır, sonra ya növbəti suala keçir, ya da
      * (bu son sualdırsa) imtahanı bitirir.
+     *
+     * "screenState != Testing" yoxlaması: əgər vaxt məhz düzgün/səhv
+     * animasiyası göstərilən qısa gecikmə zamanı bitibsə, taймer artıq
+     * finishTest()-i çağırmış ola bilər - bu halda bu funksiyanın gecikmiş
+     * çağırışı xal/nəticəni ikinci dəfə pozmasın deyə erkən çıxırıq.
      */
     fun answerQuestion(selectedIndex: Int) {
+        if (screenState != ScreenState.Testing) return
         if (selectedIndex == _questions[currentQuestionIndex].correctAnswerIndex) {
             score++
         }
@@ -758,5 +813,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         timerJob?.cancel()
         unlockListener?.let { purchasesRef.removeEventListener(it) }
+        categoryCountListener?.let { metaRef.child("categoryCount").removeEventListener(it) }
+        deletedCategoriesListener?.let { metaRef.child("deletedCategories").removeEventListener(it) }
     }
 }

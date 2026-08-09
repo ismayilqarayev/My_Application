@@ -1,6 +1,5 @@
 package com.example.myapplication
 
-import android.app.Activity
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -32,7 +31,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -94,9 +92,6 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
     // sualının cavabıdır - Firebase-ə aid deyil.
     var showPaymentDialog by remember { mutableStateOf(false) }
 
-    // Firebase Phone Auth-ın "reCAPTCHA" ehtiyatı üçün Activity lazımdır
-    val activity = LocalContext.current as Activity
-
     // Hər ekran keçidində qısa (400ms) yüklənmə göstəricisi görünsün deyə.
     // "LaunchedEffect(viewModel.screenState)" - screenState HƏR DƏYİŞƏNDƏ
     // (yəni hər ekran keçidində) bu blok yenidən işə düşür.
@@ -134,26 +129,23 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                 )
                 ScreenState.PhoneEntry -> PhoneEntryScreen(
                     phoneNumber = viewModel.phoneNumber,
-                    isSendingCode = viewModel.isSendingCode,
                     isCheckingPhone = viewModel.isCheckingPhone,
                     isReturningUser = viewModel.isReturningUser,
                     isLoggingInWithPassword = viewModel.isLoggingInWithPassword,
                     onPhoneChange = viewModel::updatePhoneNumber,
-                    onContinue = { viewModel.checkPhoneAndProceed(activity) },
+                    onContinue = viewModel::checkPhoneAndProceed,
                     onPasswordLogin = viewModel::loginWithPassword,
                     onAdminClick = { viewModel.screenState = ScreenState.Admin },
                     onBack = { viewModel.screenState = ScreenState.RoleSelection }
                 )
-                ScreenState.CodeEntry -> CodeEntryScreen(
-                    isVerifyingCode = viewModel.isVerifyingCode,
-                    onVerifyCode = viewModel::verifyCode,
-                    onBack = { viewModel.screenState = ScreenState.PhoneEntry }
-                )
                 ScreenState.NameEntry -> NameEntryScreen(
+                    isRegistering = viewModel.isRegistering,
                     onRegister = viewModel::register,
                     onBack = { viewModel.screenState = ScreenState.RoleSelection }
                 )
                 ScreenState.CategorySelection -> CategorySelectionScreen(
+                    categoryCount = viewModel.categoryCount,
+                    deletedCategories = viewModel.deletedCategories,
                     isUnlocked = viewModel.isUnlocked,
                     onCategorySelected = viewModel::selectCategory,
                     onLockedClick = { showPaymentDialog = true },   // kilidli sınağa klik -> ödəniş dialoqu aç
@@ -182,6 +174,13 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                 )
                 ScreenState.Admin -> AdminScreen(
                     isLoading = viewModel.isLoadingQuestions,
+                    categoryCount = viewModel.categoryCount,
+                    deletedCategories = viewModel.deletedCategories,
+                    categoryQuestions = viewModel.selectedCategoryQuestions,
+                    onAddCategory = viewModel::addNewCategory,
+                    onCategoryChange = viewModel::refreshSelectedCategoryQuestions,
+                    onDeleteCategory = viewModel::deleteCategory,
+                    onDeleteQuestion = viewModel::deleteQuestion,
                     onBack = {
                         // Admin panelinə hardan gəlinibsə (giriş edilməzdən əvvəl və ya sonra),
                         // müvafiq ekrana qayıtsın
@@ -441,7 +440,6 @@ fun RoleSelectionScreen(onStudentClick: () -> Unit, onTeacherClick: () -> Unit) 
 @Composable
 fun PhoneEntryScreen(
     phoneNumber: String,
-    isSendingCode: Boolean,
     isCheckingPhone: Boolean,
     isReturningUser: Boolean,
     isLoggingInWithPassword: Boolean,
@@ -453,7 +451,7 @@ fun PhoneEntryScreen(
 ) {
     var showAdminLogin by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
-    val isBusy = isSendingCode || isCheckingPhone || isLoggingInWithPassword
+    val isBusy = isCheckingPhone || isLoggingInWithPassword
 
     // Telefonun fiziki/jest "geri" hərəkəti də rol seçiminə qaytarsın (tətbiqdən
     // birbaşa çıxmaq əvəzinə)
@@ -590,114 +588,12 @@ fun PhoneEntryScreen(
 }
 
 /**
- * SMS ilə göndərilən 6 rəqəmli təsdiq kodunu daxil etmə ekranı.
+ * YALNIZ YENİ hesablar üçün göstərilən ad-soyad + parol daxil etmə ekranı.
+ * Qayıdan istifadəçilər bu ekranı görmür, çünki ad-soyadları "users/<telefon>"
+ * düyünündən avtomatik bərpa olunur.
  */
 @Composable
-fun CodeEntryScreen(
-    isVerifyingCode: Boolean,
-    onVerifyCode: (String) -> Unit,
-    onBack: () -> Unit
-) {
-    var code by remember { mutableStateOf("") }
-
-    // Telefonun fiziki/jest "geri" hərəkəti də telefon nömrəsi ekranına qaytarsın
-    BackHandler(onBack = onBack)
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.surface
-                    )
-                )
-            )
-    ) {
-        // Telefon nömrəsi ekranına qayıtma düyməsi (digər ekranlarla eyni yerdə/görünüşdə)
-        IconButton(
-            onClick = onBack,
-            enabled = !isVerifyingCode,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(8.dp)
-        ) {
-            Icon(
-                Icons.Default.ArrowBack,
-                contentDescription = "Geri",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Təsdiq Kodu",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "SMS ilə göndərilən 6 rəqəmli kodu daxil edin",
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(32.dp))
-                    OutlinedTextField(
-                        value = code,
-                        onValueChange = { code = it },
-                        label = { Text("Kod") },
-                        singleLine = true,
-                        enabled = !isVerifyingCode,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Button(
-                        onClick = { onVerifyCode(code) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        enabled = !isVerifyingCode && code.length >= 6
-                    ) {
-                        if (isVerifyingCode) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                        else Text("Təsdiqlə", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(onClick = onBack, enabled = !isVerifyingCode) {
-                        Text("Nömrəni dəyişmək istəyirəm")
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Telefon təsdiqləndikdən sonra, YALNIZ YENİ hesablar üçün göstərilən
- * ad-soyad daxil etmə ekranı. Qayıdan istifadəçilər bu ekranı görmür,
- * çünki ad-soyadları "users/<telefon>" düyünündən avtomatik bərpa olunur.
- */
-@Composable
-fun NameEntryScreen(onRegister: (String, String, String) -> Unit, onBack: () -> Unit) {
+fun NameEntryScreen(isRegistering: Boolean, onRegister: (String, String, String) -> Unit, onBack: () -> Unit) {
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -763,6 +659,7 @@ fun NameEntryScreen(onRegister: (String, String, String) -> Unit, onBack: () -> 
                         value = firstName,
                         onValueChange = { firstName = it },
                         label = { Text("Ad") },
+                        enabled = !isRegistering,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -771,6 +668,7 @@ fun NameEntryScreen(onRegister: (String, String, String) -> Unit, onBack: () -> 
                         value = lastName,
                         onValueChange = { lastName = it },
                         label = { Text("Soyad") },
+                        enabled = !isRegistering,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -780,13 +678,14 @@ fun NameEntryScreen(onRegister: (String, String, String) -> Unit, onBack: () -> 
                         onValueChange = { password = it },
                         label = { Text("Parol təyin edin") },
                         singleLine = true,
+                        enabled = !isRegistering,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
                     Text(
-                        text = "Növbəti girişlərdə SMS əvəzinə bu parol istifadə olunacaq (ən azı 4 simvol)",
+                        text = "Növbəti girişlərdə bu parolu istifadə edəcəksiniz (ən azı 4 simvol)",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
@@ -799,9 +698,10 @@ fun NameEntryScreen(onRegister: (String, String, String) -> Unit, onBack: () -> 
                             .height(56.dp),
                         shape = RoundedCornerShape(12.dp),
                         // Ad, soyad boş olduqca və ya parol qısa olduqca düymə deaktiv qalır
-                        enabled = firstName.isNotBlank() && lastName.isNotBlank() && password.length >= 4
+                        enabled = !isRegistering && firstName.isNotBlank() && lastName.isNotBlank() && password.length >= 4
                     ) {
-                        Text("İmtahana Başla", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        if (isRegistering) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        else Text("İmtahana Başla", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -810,8 +710,10 @@ fun NameEntryScreen(onRegister: (String, String, String) -> Unit, onBack: () -> 
 }
 
 /**
- * Kateqoriya (sınaq) seçimi ekranı: 1-dən 25-ə qədər sınaqları 3-lük
- * sıralarla göstərir. 4-cü sınaqdan yuxarı, ödəniş edilməyibsə, kilidli olur.
+ * Kateqoriya (sınaq) seçimi ekranı: 1-dən "categoryCount"-a qədər sınaqları
+ * 3-lük sıralarla göstərir. 4-cü sınaqdan yuxarı, ödəniş edilməyibsə, kilidli
+ * olur. Sınaqların sayı sabit deyil - admin panelindən artırıla bilər (bax:
+ * TestViewModel.addNewCategory).
  *
  * DİQQƏT: Bu funksiya bilərəkdən TestViewModel-i BİRBAŞA qəbul ETMİR -
  * yalnız sadə parametrlər (Boolean, funksiyalar) alır. Bu, iki səbəbə görədir:
@@ -822,14 +724,16 @@ fun NameEntryScreen(onRegister: (String, String, String) -> Unit, onBack: () -> 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategorySelectionScreen(
+    categoryCount: Int,
+    deletedCategories: Set<Int>,
     isUnlocked: Boolean,
     onCategorySelected: (String) -> Unit,
     onLockedClick: () -> Unit,
     onAdminClick: () -> Unit,
     onBack: () -> Unit
 ) {
-    // 25 ədəd "sınaq N" adlı kateqoriya siyahısı yaradılır (statik, hər dəfə eynidir)
-    val categories = (1..25).map { "sınaq $it" to "📝" }
+    // Admin tərəfindən silinmiş sınaqlar (bax: TestViewModel.deleteCategory) siyahıda görünmür
+    val categories = (1..categoryCount).filter { it !in deletedCategories }.map { "sınaq $it" to "📝" }
     var showAdminLogin by remember { mutableStateOf(false) }
 
     // Telefonun fiziki/jest "geri" hərəkəti də rol seçiminə qaytarsın
@@ -962,9 +866,11 @@ fun CategorySelectionScreen(
     }
 }
 
-// Kart-karta köçürmə üçün göstərilən məlumatlar. Dəyişmək istəsəniz elə bu iki sətri redaktə edin.
-private const val PAYMENT_CARD_NUMBER = "5239 1524 3334 0354"
-private const val PAYMENT_AMOUNT_AZN = "5"
+// Kart-karta köçürmə üçün göstərilən məlumatlar "local.properties" faylından gəlir
+// (PAYMENT_CARD_NUMBER, PAYMENT_AMOUNT_AZN) - admin parolu kimi bu fayl da git-ə
+// daxil edilmir, ona görə real kart nömrəsi kod deposunda (GitHub-da) görünmür.
+private val PAYMENT_CARD_NUMBER = BuildConfig.PAYMENT_CARD_NUMBER
+private val PAYMENT_AMOUNT_AZN = BuildConfig.PAYMENT_AMOUNT_AZN
 
 /**
  * 4-cü sınaqdan yuxarı bir kateqoriyaya klikləyəndə açılan pəncərə.
@@ -1049,6 +955,13 @@ fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
 @Composable
 fun AdminScreen(
     isLoading: Boolean,
+    categoryCount: Int,
+    deletedCategories: Set<Int>,
+    categoryQuestions: List<Question>,
+    onAddCategory: () -> Unit,
+    onCategoryChange: (String) -> Unit,
+    onDeleteCategory: (String) -> Unit,
+    onDeleteQuestion: (String, Int) -> Unit,
     onBack: () -> Unit,
     onUpload: (String, String, List<String>, Int, Uri?) -> Unit,
     onManualUnlock: (String) -> Unit,
@@ -1062,9 +975,44 @@ fun AdminScreen(
     var option4 by remember { mutableStateOf("") }
     var correctIndex by remember { mutableIntStateOf(0) }       // hansı variant (0-3) düzgündür
     var imageUri by remember { mutableStateOf<Uri?>(null) }     // seçilmiş şəklin telefon daxilindəki ünvanı
+    var showDeleteCategoryConfirm by remember { mutableStateOf(false) }  // "Sınağı sil" təsdiq dialoqu
 
     // Telefonun fiziki/jest "geri" hərəkəti də əvvəlki ekrana qaytarsın
     BackHandler(onBack = onBack)
+
+    if (showDeleteCategoryConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteCategoryConfirm = false },
+            title = { Text("Sınağı sil") },
+            text = { Text("\"$category\" sınağı və içindəki BÜTÜN suallar həmişəlik silinəcək. Davam edilsin?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteCategory(category)
+                    showDeleteCategoryConfirm = false
+                }) { Text("Sil", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteCategoryConfirm = false }) { Text("Ləğv et") }
+            }
+        )
+    }
+
+    // Seçilmiş kateqoriya dəyişəndə VƏ hər sual yükləməsi bitəndə (isLoading
+    // true-dan false-a keçəndə) həmin sınağın sual siyahısını təzələyirik ki,
+    // admin sınağın İÇİNƏ baxıb, elə oradan yeni sual əlavə edə bilsin
+    LaunchedEffect(category, isLoading) {
+        if (!isLoading) onCategoryChange(category)
+    }
+
+    // Seçili sınaq elə indicə silinibsə (məs. başqa admin ekranından), ilk
+    // mövcud sınağa keçirik ki, silinmiş bir kateqoriyaya sual yüklənməsin
+    LaunchedEffect(deletedCategories, categoryCount) {
+        val currentNumber = category.filter { it.isDigit() }.toIntOrNull()
+        if (currentNumber != null && currentNumber in deletedCategories) {
+            val firstAvailable = (1..categoryCount).firstOrNull { it !in deletedCategories }
+            if (firstAvailable != null) category = "sınaq $firstAvailable"
+        }
+    }
 
     // Telefonun qalereyasından şəkil seçmək üçün "launcher" (Android-in hazır alətidir)
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -1089,14 +1037,15 @@ fun AdminScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 25 kateqoriyanı üfüqi sürüşdürülə bilən "çip" (chip) siyahısı kimi göstəririk
+            // Bütün mövcud kateqoriyaları üfüqi sürüşdürülə bilən "çip" (chip) siyahısı kimi göstəririk,
+            // sonunda isə yeni sınaq əlavə etmək üçün bir çip qoyulur
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.Start
             ) {
-                (1..25).forEach { i ->
+                (1..categoryCount).filter { it !in deletedCategories }.forEach { i ->
                     val cat = "sınaq $i"
                     FilterChip(
                         selected = category == cat,
@@ -1105,9 +1054,98 @@ fun AdminScreen(
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
                 }
+                AssistChip(
+                    onClick = {
+                        onAddCategory()
+                        category = "sınaq ${categoryCount + 1}"
+                    },
+                    label = { Text("+ Yeni sınaq") },
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(8.dp))
+
+            // Hazırkı kateqoriyada olan sualların sayı (solda) və bütün sınağı
+            // silmək düyməsi (sağda) - 25 tövsiyə olunan hədəfdir, sərt limit deyil
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "\"$category\" sınağının içindəki suallar (${categoryQuestions.size} / tövsiyə: 25)",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (categoryQuestions.size >= 25) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { showDeleteCategoryConfirm = true }) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Sınağı sil", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Sınağın İÇİNDƏKİ mövcud sualların siyahısı - admin əvvəlcə nə
+            // olduğunu görür (hər birini ayrıca silə də bilər), sonra elə
+            // buradan aşağıdakı formla yenisini əlavə edir
+            if (categoryQuestions.isEmpty()) {
+                Text(
+                    text = "Bu sınaqda hələ sual yoxdur.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 260.dp)
+                        .verticalScroll(rememberScrollState())
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp)
+                ) {
+                    categoryQuestions.forEachIndexed { index, q ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${index + 1}. ${q.text}",
+                                fontSize = 13.sp,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(vertical = 4.dp)
+                            )
+                            IconButton(
+                                onClick = { onDeleteQuestion(category, q.id) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Sualı sil",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Text(
+                text = "Yeni sual əlavə et",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(Modifier.height(12.dp))
 
             // Şəkil seçmə qutusu: klikləyəndə qalereya açılır, seçilibsə önizləmə göstərilir
             Box(
@@ -1344,6 +1382,20 @@ fun QuestionScreen(
     // tətbiqdən çıxmasın (imtahan ortasında)
     BackHandler { showExitConfirm = true }
 
+    // İstifadəçinin bu sualda seçdiyi variant. "remember(question.id)" sayəsində
+    // hər yeni sualda avtomatik sıfırlanır (əks halda köhnə sualın seçimi qalardı).
+    var selectedIndex by remember(question.id) { mutableStateOf<Int?>(null) }
+
+    // Seçim ediləndən qısa müddət sonra (səhv/düzgün göründükdən sonra) növbəti
+    // suala keçirik - "Təsdiqlə" düyməsi olmadan, amma cavabı görmək üçün kifayət vaxt
+    LaunchedEffect(selectedIndex, question.id) {
+        val index = selectedIndex
+        if (index != null) {
+            delay(1200)
+            onAnswer(index)
+        }
+    }
+
     if (showExitConfirm) {
         AlertDialog(
             onDismissRequest = { showExitConfirm = false },
@@ -1464,25 +1516,61 @@ fun QuestionScreen(
 
             Spacer(Modifier.height(32.dp))
 
-            // Cavab variantları: hər birinə klikləmək dərhal "onAnswer(index)" çağırır -
-            // yəni "Təsdiqlə" düyməsi yoxdur, seçim edən kimi növbəti suala keçir
+            // Cavab variantları: seçim ediləndə həmin variant səhvdirsə qırmızı,
+            // düzgün variant isə (seçilməsə belə) yaşıl işıqlandırılır ki,
+            // istifadəçi düzgün cavabı görsün - sonra qısa gecikmədən sonra
+            // növbəti suala keçilir (bax: yuxarıdakı LaunchedEffect)
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 question.options.forEachIndexed { index, option ->
+                    val isAnswered = selectedIndex != null
+                    val isCorrectOption = index == question.correctAnswerIndex
+                    val isWrongSelection = isAnswered && index == selectedIndex && !isCorrectOption
+
+                    val containerColor = when {
+                        isAnswered && isCorrectOption -> MaterialTheme.colorScheme.secondaryContainer
+                        isWrongSelection -> MaterialTheme.colorScheme.errorContainer
+                        else -> MaterialTheme.colorScheme.surface
+                    }
+                    val contentColor = when {
+                        isAnswered && isCorrectOption -> MaterialTheme.colorScheme.onSecondaryContainer
+                        isWrongSelection -> MaterialTheme.colorScheme.onErrorContainer
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
+                    val borderColor = when {
+                        isAnswered && isCorrectOption -> MaterialTheme.colorScheme.secondary
+                        isWrongSelection -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.outlineVariant
+                    }
+
                     Surface(
-                        onClick = { onAnswer(index) },
+                        onClick = { if (selectedIndex == null) selectedIndex = index },
+                        enabled = selectedIndex == null,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant),
+                        color = containerColor,
+                        border = androidx.compose.foundation.BorderStroke(2.dp, borderColor),
                         tonalElevation = 2.dp
                     ) {
-                        Text(
-                            text = option,
-                            modifier = Modifier.padding(20.dp),
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = option,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = contentColor,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isAnswered && isCorrectOption) {
+                                Icon(Icons.Default.Check, contentDescription = "Düzgün cavab", tint = contentColor)
+                            } else if (isWrongSelection) {
+                                Icon(Icons.Default.Close, contentDescription = "Səhv cavab", tint = contentColor)
+                            }
+                        }
                     }
                 }
             }
@@ -1594,7 +1682,6 @@ fun PhoneEntryPreview() {
     MyApplicationTheme {
         PhoneEntryScreen(
             phoneNumber = "",
-            isSendingCode = false,
             isCheckingPhone = false,
             isReturningUser = false,
             isLoggingInWithPassword = false,
@@ -1609,17 +1696,9 @@ fun PhoneEntryPreview() {
 
 @Preview(showBackground = true)
 @Composable
-fun CodeEntryPreview() {
-    MyApplicationTheme {
-        CodeEntryScreen(isVerifyingCode = false, onVerifyCode = {}, onBack = {})
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
 fun NameEntryPreview() {
     MyApplicationTheme {
-        NameEntryScreen(onRegister = { _, _, _ -> }, onBack = {})
+        NameEntryScreen(isRegistering = false, onRegister = { _, _, _ -> }, onBack = {})
     }
 }
 
@@ -1628,7 +1707,7 @@ fun NameEntryPreview() {
 fun CategorySelectionPreview() {
     MyApplicationTheme {
         // "isUnlocked = false" - önizləmədə kilidlərin necə göründüyünü görmək üçün
-        CategorySelectionScreen(isUnlocked = false, onCategorySelected = {}, onLockedClick = {}, onAdminClick = {}, onBack = {})
+        CategorySelectionScreen(categoryCount = 25, deletedCategories = emptySet(), isUnlocked = false, onCategorySelected = {}, onLockedClick = {}, onAdminClick = {}, onBack = {})
     }
 }
 
@@ -1638,6 +1717,13 @@ fun AdminPreview() {
     MyApplicationTheme {
         AdminScreen(
             isLoading = false,
+            categoryCount = 25,
+            deletedCategories = emptySet(),
+            categoryQuestions = emptyList(),
+            onAddCategory = {},
+            onCategoryChange = {},
+            onDeleteCategory = {},
+            onDeleteQuestion = { _, _ -> },
             onBack = {},
             onUpload = { _, _, _, _, _ -> },
             onManualUnlock = {},
