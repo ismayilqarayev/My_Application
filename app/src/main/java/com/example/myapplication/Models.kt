@@ -1,3 +1,4 @@
+
 package com.example.myapplication
 
 // Bu fayl tətbiqdə istifadə olunan "məlumat modellərini" (data class) saxlayır.
