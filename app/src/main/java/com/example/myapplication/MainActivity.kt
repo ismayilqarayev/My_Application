@@ -44,10 +44,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.example.myapplication.BuildConfig
 import com.example.myapplication.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.delay
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 // ==========================================================================
 // BU FAYL TƏTBIQIN BÜTÜN EKRANLARINI (Compose UI) SAXLAYIR.
@@ -107,7 +107,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
     var isTransitioning by remember { mutableStateOf(false) }
     LaunchedEffect(viewModel.screenState) {
         isTransitioning = true
-        delay(TRANSITION_DURATION_MS)
+        delay(TRANSITION_DURATION_MS.milliseconds)
         isTransitioning = false
     }
 
@@ -920,8 +920,8 @@ fun CategorySelectionScreen(
 // Kart-karta köçürmə üçün göstərilən məlumatlar "local.properties" faylından gəlir
 // (PAYMENT_CARD_NUMBER, PAYMENT_AMOUNT_AZN) - admin parolu kimi bu fayl da git-ə
 // daxil edilmir, ona görə real kart nömrəsi kod deposunda (GitHub-da) görünmür.
-private val PAYMENT_CARD_NUMBER = BuildConfig.PAYMENT_CARD_NUMBER
-private val PAYMENT_AMOUNT_AZN = BuildConfig.PAYMENT_AMOUNT_AZN
+private const val PAYMENT_CARD_NUMBER = BuildConfig.PAYMENT_CARD_NUMBER
+private const val PAYMENT_AMOUNT_AZN = BuildConfig.PAYMENT_AMOUNT_AZN
 
 /**
  * 4-cü sınaqdan yuxarı bir kateqoriyaya klikləyəndə açılan pəncərə.
@@ -1552,7 +1552,7 @@ fun QuestionScreen(
     LaunchedEffect(selectedIndex, question.id) {
         val index = selectedIndex
         if (index != null) {
-            delay(1200)
+            delay(1200.milliseconds)
             onAnswer(index)
         }
     }
