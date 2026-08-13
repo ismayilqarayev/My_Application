@@ -19,7 +19,7 @@ Kotlin və Jetpack Compose ilə yazılmış, Firebase backend-li Android imtahan
 - **Nəticə ekranı**: xal, uğur/uğursuzluq statusu
 
 ### Müəllim (Admin) tərəfi
-- Gizli parolla qorunan giriş (`local.properties` → `ADMIN_PASSWORD`)
+- Gizli parolla qorunan giriş — parol Firebase Authentication-dakı sabit `admin@<layihə>.local` hesabına göndərilir (bax: [Admin hesabının qurulması](#admin-hesabının-qurulması))
 - **Sınaqların idarəsi**:
   - Sınaqların sayı sabit deyil — "+ Yeni sınaq" düyməsi ilə istənilən qədər artırıla bilər
   - Hər sınağın içindəki bütün sualların siyahısına baxmaq, elə oradan yeni sual əlavə etmək
@@ -94,21 +94,31 @@ meta/
    - Storage aktivləşdirin, `storage.rules` faylını deploy edin
    - Authentication → Sign-in method → **Email/Password** provayderini aktivləşdirin
    - Android tətbiqi qeydiyyatdan keçirin, `google-services.json` faylını `app/` qovluğuna qoyun
-2. **`local.properties`** faylını layihənin kök qovluğunda yaradın (nümunə üçün aşağıya baxın)
-3. **Release imza açarı** lazımdırsa (`./gradlew assembleRelease` üçün), `keytool` ilə `.jks` açarı yaradın və yolunu `local.properties`-də göstərin
-4. Build:
+2. **Admin hesabını yaradın** — aşağıdakı [Admin hesabının qurulması](#admin-hesabının-qurulması) bölməsinə baxın
+3. **`local.properties`** faylını layihənin kök qovluğunda yaradın (nümunə üçün aşağıya baxın)
+4. **Release imza açarı** lazımdırsa (`./gradlew assembleRelease` üçün), `keytool` ilə `.jks` açarı yaradın və yolunu `local.properties`-də göstərin
+5. Build:
    ```bash
    ./gradlew assembleDebug     # test üçün
    ./gradlew assembleRelease   # paylaşım üçün (imzalanmış)
    ```
 
+### Admin hesabının qurulması
+
+Admin paneli artıq kodun içində saxlanılan bir parolla deyil, Firebase Authentication-dakı **sabit bir hesabla** qorunur — bu sayədə Realtime Database/Storage qaydaları "bu, əsl admindir" faktını server tərəfində yoxlaya bilir (kodun içindəki müqayisəni "inandığımız" köhnə üsuldan fərqli olaraq).
+
+Bir dəfəlik, əl ilə edilməli addım:
+
+1. Firebase Console → **Authentication** → **Users** → **Add user**
+2. Email: `admin@myapplication-223cacbf.local` (layihənin adı fərqlidirsə, `TestViewModel.kt`-dəki `ADMIN_EMAIL` sabitini və `database.rules.json`/`storage.rules`-dəki eyni email dəyərini uyğun dəyişin)
+3. Password: seçdiyiniz admin parolu — tətbiqdəki "Müəllim" girişində məhz bu parol istifadə olunacaq
+
+Parolu dəyişmək istəsəniz, sadəcə Firebase Console-dan həmin istifadəçinin parolunu yeniləyin.
+
 ### `local.properties` nümunəsi
 
 ```properties
 sdk.dir=/path/to/android/sdk
-
-# Admin panelinə giriş parolu (öz seçdiyiniz dəyərlə əvəz edin)
-ADMIN_PASSWORD=your_admin_password_here
 
 # Kart-karta köçürmə məlumatları
 PAYMENT_CARD_NUMBER=0000 0000 0000 0000
@@ -126,8 +136,12 @@ Bu fayl `.gitignore`-dadır — heç vaxt commit edilmir.
 ## Təhlükəsizlik qeydləri
 
 - Parollar heç vaxt açıq mətn kimi saxlanılmır — Firebase Authentication-un öz (hash-lənmiş) mexanizmi istifadə olunur. Telefon nömrəsindən sintetik email düzəldilir (`<nömrə>@<layihə>.local`) və bu, Email/Parol provayderinin "istifadəçi adı" kimi işlədilir.
-- `database.rules.json`-dakı qaydalar kiçik/şəxsi layihə üçün sadələşdirilib (əksər düyünlər açıq oxuma/yazmaya icazə verir). Genişmiqyaslı və ya həssas istifadə üçün daha ciddi qaydalar tələb olunur.
-- Admin parolu və ödəniş kartı məlumatları `local.properties` vasitəsilə `BuildConfig`-ə keçirilir — mənbə kodunda (və GitHub-da) görünmür.
+- Admin girişi də eyni prinsiplə işləyir: sabit `admin@<layihə>.local` hesabı ilə (bax: [Admin hesabının qurulması](#admin-hesabının-qurulması)). `database.rules.json` və `storage.rules` yalnız bu hesabla autentifikasiya olunmuş sessiyalara `questions`/`purchases`/`meta` yazma icazəsi verir — başqa heç bir istifadəçi (özü daxil olmaqla) bu düyünləri dəyişə bilməz.
+- `results` (imtahan nəticələri) yalnız admin tərəfindən oxuna bilər; hər istifadəçi öz nəticəsini bir dəfə yaza bilər, mövcud nəticəni dəyişə bilməz.
+- `questions` düyünündə yalnız admin mövcud sualları dəyişə/silə bilər — adi istifadəçilər YALNIZ hələ mövcud olmayan (boş kateqoriyalar üçün "hazır" sualların avtomatik yaradılması məqsədilə) sual yarada bilir, üzərinə yaza bilmir.
+- `users/<telefon>` düyünü hələ də ictimai OXUNA bilir (ad-soyad) — bu, giriş zamanı "bu nömrə qeydiyyatlıdırmı?" yoxlamasının hələ Firebase Auth sessiyası başlamazdan ƏVVƏL baş verməsi ilə bağlı bir güzəştdir. YAZMA isə yalnız hesabın sahibinə və admin-ə icazəlidir.
+- Ödəniş kartı məlumatları `local.properties` vasitəsilə `BuildConfig`-ə keçirilir — mənbə kodunda (və GitHub-da) görünmür.
+- `database.rules.json`/`storage.rules`-də dəyişiklik etdikdən sonra onları Firebase Console-dan (və ya `firebase deploy --only database,storage`) yenidən deploy etməyi unutmayın — yerli fayldakı dəyişiklik avtomatik tətbiq olunmur.
 
 ## Bilinən məhdudiyyətlər
 

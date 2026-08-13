@@ -1,28 +1,34 @@
 {
   "rules": {
     "questions": {
-      ".read": true,
-      ".write": true
+      ".read": "auth != null",
+      "$category": {
+        "$questionId": {
+          ".write": "auth != null && (auth.token.email == 'admin@myapplication-223cacbf.local' || !data.exists())"
+        }
+      }
     },
     "results": {
-      ".read": true,
-      ".write": true
+      ".read": "auth != null && auth.token.email == 'admin@myapplication-223cacbf.local'",
+      "$resultId": {
+        ".write": "auth != null && !data.exists()"
+      }
     },
     "purchases": {
       "$phone": {
-        ".read": true,
-        ".write": true
+        ".read": "auth != null && (auth.token.email == ($phone + '@myapplication-223cacbf.local') || auth.token.email == 'admin@myapplication-223cacbf.local')",
+        ".write": "auth != null && auth.token.email == 'admin@myapplication-223cacbf.local'"
       }
     },
     "users": {
       "$phone": {
         ".read": true,
-        ".write": true
+        ".write": "auth != null && (auth.token.email == ($phone + '@myapplication-223cacbf.local') || auth.token.email == 'admin@myapplication-223cacbf.local')"
       }
     },
     "meta": {
       ".read": true,
-      ".write": true
+      ".write": "auth != null && auth.token.email == 'admin@myapplication-223cacbf.local'"
     }
   }
 }

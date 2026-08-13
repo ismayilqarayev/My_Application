@@ -127,6 +127,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
             when (state) {
                 ScreenState.RoleSelection -> RoleSelectionScreen(
                     onStudentClick = { viewModel.screenState = ScreenState.PhoneEntry },
+                    onAdminVerify = viewModel::adminLogin,
                     onTeacherClick = { viewModel.screenState = ScreenState.Admin }
                 )
                 ScreenState.PhoneEntry -> PhoneEntryScreen(
@@ -137,6 +138,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                     onPhoneChange = viewModel::updatePhoneNumber,
                     onContinue = viewModel::checkPhoneAndProceed,
                     onPasswordLogin = viewModel::loginWithPassword,
+                    onAdminVerify = viewModel::adminLogin,
                     onAdminClick = { viewModel.screenState = ScreenState.Admin },
                     onBack = { viewModel.screenState = ScreenState.RoleSelection }
                 )
@@ -152,6 +154,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                     isUnlocked = viewModel.isUnlocked,
                     onCategorySelected = viewModel::selectCategory,
                     onLockedClick = { showPaymentDialog = true },   // kilidli sınağa klik -> ödəniş dialoqu aç
+                    onAdminVerify = viewModel::adminLogin,
                     onAdminClick = { viewModel.screenState = ScreenState.Admin },
                     onBack = { viewModel.screenState = ScreenState.RoleSelection }
                 )
@@ -191,6 +194,9 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                         viewModel.screenState =
                             if (viewModel.userInfo != null) ScreenState.CategorySelection
                             else ScreenState.RoleSelection
+                        // Şagird kimi giriş edilməyibsə, admin Firebase sessiyasını bağla
+                        // (bax: TestViewModel.signOutAdminIfNeeded qeydi)
+                        viewModel.signOutAdminIfNeeded()
                     },
                     onUpload = viewModel::uploadQuestion,
                     onManualUnlock = viewModel::manualUnlock,
@@ -289,11 +295,18 @@ fun TransitionLoadingScreen() {
  * CategorySelectionScreen-də (artıq giriş etmiş istifadəçilər üçün) istifadə
  * olunur ki, admin panelinə giriş sessiyanın vəziyyətindən asılı olmayaraq
  * həmişə mümkün olsun.
+ *
+ * "onVerify" - parolu TestViewModel.adminLogin() vasitəsilə Firebase Auth-a
+ * göndərir (bax: TestViewModel-də ADMIN_EMAIL qeydi). Əvvəllər parol burada,
+ * kodun İÇİNDƏ (BuildConfig.ADMIN_PASSWORD) müqayisə olunurdu - bu, Realtime
+ * Database qaydaları üçün server tərəfində sübut edilə bilməyən, ona görə
+ * TƏHLÜKƏSİZ olmayan bir yoxlama idi.
  */
 @Composable
-fun AdminLoginDialog(onDismiss: () -> Unit, onSuccess: () -> Unit) {
+fun AdminLoginDialog(onDismiss: () -> Unit, onVerify: (String, (Boolean) -> Unit) -> Unit, onSuccess: () -> Unit) {
     var password by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }   // yanlış parol yazılıbsa true olur
+    var isChecking by remember { mutableStateOf(false) } // Firebase-dən cavab gözlənilərkən true
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -310,7 +323,10 @@ fun AdminLoginDialog(onDismiss: () -> Unit, onSuccess: () -> Unit) {
                     },
                     label = { Text("Parol") },
                     singleLine = true,
+                    enabled = !isChecking,
                     isError = isError,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 )
@@ -327,21 +343,21 @@ fun AdminLoginDialog(onDismiss: () -> Unit, onSuccess: () -> Unit) {
         confirmButton = {
             Button(
                 onClick = {
-                    // Parol BuildConfig-dən oxunur (local.properties -> ADMIN_PASSWORD),
-                    // koda "hardcode" edilməyib ki, mənbə koduna baxan hər kəs görməsin.
-                    if (password == BuildConfig.ADMIN_PASSWORD) {
-                        onSuccess()
-                    } else {
-                        isError = true
+                    isChecking = true
+                    onVerify(password) { success ->
+                        isChecking = false
+                        if (success) onSuccess() else isError = true
                     }
                 },
+                enabled = !isChecking,
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Daxil Ol")
+                if (isChecking) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp))
+                else Text("Daxil Ol")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, enabled = !isChecking) {
                 Text("Ləğv Et")
             }
         }
@@ -354,12 +370,13 @@ fun AdminLoginDialog(onDismiss: () -> Unit, onSuccess: () -> Unit) {
  *  - "Müəllim" -> admin parolunu soruşur, düzgündürsə birbaşa Admin panelinə keçir
  */
 @Composable
-fun RoleSelectionScreen(onStudentClick: () -> Unit, onTeacherClick: () -> Unit) {
+fun RoleSelectionScreen(onStudentClick: () -> Unit, onAdminVerify: (String, (Boolean) -> Unit) -> Unit, onTeacherClick: () -> Unit) {
     var showAdminLogin by remember { mutableStateOf(false) }
 
     if (showAdminLogin) {
         AdminLoginDialog(
             onDismiss = { showAdminLogin = false },
+            onVerify = onAdminVerify,
             onSuccess = {
                 showAdminLogin = false
                 onTeacherClick()
@@ -473,6 +490,7 @@ fun PhoneEntryScreen(
     onPhoneChange: (String) -> Unit,
     onContinue: () -> Unit,
     onPasswordLogin: (String) -> Unit,
+    onAdminVerify: (String, (Boolean) -> Unit) -> Unit,
     onAdminClick: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -487,6 +505,7 @@ fun PhoneEntryScreen(
     if (showAdminLogin) {
         AdminLoginDialog(
             onDismiss = { showAdminLogin = false },
+            onVerify = onAdminVerify,
             onSuccess = {
                 showAdminLogin = false
                 onAdminClick()
@@ -757,6 +776,7 @@ fun CategorySelectionScreen(
     isUnlocked: Boolean,
     onCategorySelected: (String) -> Unit,
     onLockedClick: () -> Unit,
+    onAdminVerify: (String, (Boolean) -> Unit) -> Unit,
     onAdminClick: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -770,6 +790,7 @@ fun CategorySelectionScreen(
     if (showAdminLogin) {
         AdminLoginDialog(
             onDismiss = { showAdminLogin = false },
+            onVerify = onAdminVerify,
             onSuccess = {
                 showAdminLogin = false
                 onAdminClick()
@@ -1812,7 +1833,7 @@ fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> U
 @Composable
 fun RoleSelectionPreview() {
     MyApplicationTheme {
-        RoleSelectionScreen(onStudentClick = {}, onTeacherClick = {})
+        RoleSelectionScreen(onStudentClick = {}, onAdminVerify = { _, onResult -> onResult(false) }, onTeacherClick = {})
     }
 }
 
@@ -1828,6 +1849,7 @@ fun PhoneEntryPreview() {
             onPhoneChange = {},
             onContinue = {},
             onPasswordLogin = {},
+            onAdminVerify = { _, onResult -> onResult(false) },
             onAdminClick = {},
             onBack = {}
         )
@@ -1847,7 +1869,7 @@ fun NameEntryPreview() {
 fun CategorySelectionPreview() {
     MyApplicationTheme {
         // "isUnlocked = false" - önizləmədə kilidlərin necə göründüyünü görmək üçün
-        CategorySelectionScreen(categoryCount = 25, deletedCategories = emptySet(), categoryNames = emptyMap(), isUnlocked = false, onCategorySelected = {}, onLockedClick = {}, onAdminClick = {}, onBack = {})
+        CategorySelectionScreen(categoryCount = 25, deletedCategories = emptySet(), categoryNames = emptyMap(), isUnlocked = false, onCategorySelected = {}, onLockedClick = {}, onAdminVerify = { _, onResult -> onResult(false) }, onAdminClick = {}, onBack = {})
     }
 }
 

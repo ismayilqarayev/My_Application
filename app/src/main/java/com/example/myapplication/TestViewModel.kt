@@ -151,6 +151,23 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun fakeEmailFor(phoneKey: String) = "$phoneKey@myapplication-223cacbf.local"
 
+    companion object {
+        /**
+         * Admin panelinin sabit Firebase Auth email ünvanı. Əvvəllər admin girişi
+         * yalnız kodun İÇİNDƏ (BuildConfig.ADMIN_PASSWORD) müqayisə olunurdu - bu,
+         * Realtime Database qaydaları üçün TƏHLÜKƏLİ idi, çünki server tərəfində
+         * "bu, əsl admindir" sübutu yox idi (bax: database.rules.json-da köhnə
+         * ".read/.write": true qaydaları). İndi admin parolu bu sabit hesabla
+         * Firebase Auth-a göndərilir - uğurlu olarsa, "auth.token.email == ADMIN_EMAIL"
+         * server tərəfində yoxlanıla bilən bir sübuta çevrilir (bax: adminLogin()).
+         *
+         * BİR DƏFƏLİK QURULUM: Firebase Console -> Authentication -> Add user
+         * bölməsindən bu email ilə əl ilə bir hesab yaradılmalıdır - admin
+         * panelinin parolu elə o hesabın parolu olacaq.
+         */
+        const val ADMIN_EMAIL = "admin@myapplication-223cacbf.local"
+    }
+
     /**
      * Bu cihaza xas, sabit bir ID qaytarır (Android-in "Settings.Secure.ANDROID_ID"
      * dəyəri). Hesabların telefonlar arasında paylaşılmasının qarşısını almaq
@@ -334,8 +351,12 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         // Hesab email/parol provayderi ilə saxlanıldığı üçün telefon nömrəsi
         // Firebase-in "phoneNumber" sahəsində deyil, sintetik emailin özündə
         // gizlənib ("<nömrə>@..." - bax: fakeEmailFor) - ordan geri çıxarırıq.
-        auth.currentUser?.email?.substringBefore("@")?.let { phone ->
-            loadUserOrAskName(phone, onlyIfStillOnRoleSelection = true)
+        // ADMIN_EMAIL-i istisna edirik - əks halda admin sessiyası qapanmadan
+        // tətbiq yenidən açılsa, "admin" bir telefon nömrəsi kimi şərh olunardı.
+        auth.currentUser?.email?.let { email ->
+            if (email != ADMIN_EMAIL) {
+                loadUserOrAskName(email.substringBefore("@"), onlyIfStillOnRoleSelection = true)
+            }
         }
     }
 
@@ -564,6 +585,46 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { e ->
                 errorMessage = "Cihaz sıfırlana bilmədi: ${e.message}"
             }
+    }
+
+    // ---------------------------------------------------------------------
+    // ADMIN GİRİŞİ
+    // ---------------------------------------------------------------------
+
+    var isAdminLoggingIn by mutableStateOf(false)
+        private set
+
+    /**
+     * Admin parol dialoqunda "Daxil Ol" düyməsinə basılanda çağırılır. Parolu
+     * birbaşa sabit ADMIN_EMAIL hesabı ilə Firebase Auth-a göndərir - uğurlu
+     * olarsa bu sessiya server tərəfində "admindir" kimi sübut oluna bilir
+     * (bax: ADMIN_EMAIL qeydi və database.rules.json).
+     */
+    fun adminLogin(password: String, onResult: (success: Boolean) -> Unit) {
+        isAdminLoggingIn = true
+        auth.signInWithEmailAndPassword(ADMIN_EMAIL, password)
+            .addOnSuccessListener {
+                isAdminLoggingIn = false
+                onResult(true)
+            }
+            .addOnFailureListener {
+                isAdminLoggingIn = false
+                onResult(false)
+            }
+    }
+
+    /**
+     * Admin panelindən geri qayıdanda çağırılır. Əgər admin panelinə heç bir
+     * şagird kimi giriş etmədən (birbaşa "Müəllim" düyməsi ilə) daxil olunubsa,
+     * Firebase Auth sessiyasını bağlayır ki, cihaz həmişəlik "admin kimi
+     * qeydiyyatlı" qalmasın (əks halda tətbiq növbəti dəfə açılanda "admin"
+     * bir telefon nömrəsi kimi şərh oluna bilərdi - bax: init bloku).
+     * Artıq şagird kimi giriş edilibsə (userInfo doludursa), toxunmuruq.
+     */
+    fun signOutAdminIfNeeded() {
+        if (userInfo == null && auth.currentUser?.email == ADMIN_EMAIL) {
+            auth.signOut()
+        }
     }
 
     // ---------------------------------------------------------------------

@@ -27,11 +27,6 @@ android {
 
         buildConfigField(
             "String",
-            "ADMIN_PASSWORD",
-            "\"${localProperties.getProperty("ADMIN_PASSWORD", "admin777")}\""
-        )
-        buildConfigField(
-            "String",
             "PAYMENT_CARD_NUMBER",
             "\"${localProperties.getProperty("PAYMENT_CARD_NUMBER", "0000 0000 0000 0000")}\""
         )
