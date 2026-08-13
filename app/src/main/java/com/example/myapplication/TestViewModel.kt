@@ -673,8 +673,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
                 database.getReference("questions").child(category).child(questionId.toString())
                     .setValue(newQuestion).await()
 
-                isLoadingQuestions = false
-                screenState = ScreenState.CategorySelection   // uğurlu olanda kateqoriya ekranına qayıdırıq
+                isLoadingQuestions = false   // admin panelində qalırıq (MainActivity.kt-dəki AdminScreen isLoading dəyişəndə siyahını özü təzələyir)
             } catch (e: Exception) {
                 isLoadingQuestions = false
                 errorMessage = "Sual yadda saxlanıla bilmədi: ${e.message}"
@@ -731,8 +730,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
                 // hər sual üçün ayrıca setValue çağırmaqdan daha səmərəlidir.
                 val updates: Map<String, Question> = questions.associateBy { it.id.toString() }
                 questionsRef.child(category).updateChildren(updates).await()
-                isLoadingQuestions = false
-                screenState = ScreenState.CategorySelection
+                isLoadingQuestions = false   // admin panelində qalırıq (MainActivity.kt-dəki AdminScreen isLoading dəyişəndə siyahını özü təzələyir)
             } catch (e: Exception) {
                 isLoadingQuestions = false
                 errorMessage = "Toplu sual saxlanıla bilmədi: ${e.message}"
