@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -39,16 +40,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -71,6 +76,7 @@ import com.example.myapplication.ui.theme.LessonPinkContainer
 import com.example.myapplication.ui.theme.LessonTeal
 import com.example.myapplication.ui.theme.LessonTealContainer
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
@@ -1097,10 +1103,10 @@ fun AdminScreen(
     onDeleteCategory: (String) -> Unit,
     onDeleteQuestion: (String, Int) -> Unit,
     onBack: () -> Unit,
-    onUpload: (String, String, List<String>, Int, Uri?) -> Unit,
+    onUpload: (String, String, List<String>, Int, Uri?, () -> Unit) -> Unit,
     onManualUnlock: (String) -> Unit,
     onDeviceReset: (String) -> Unit,
-    onBulkUpload: (String, String) -> Unit
+    onBulkUpload: (String, String, () -> Unit) -> Unit
 ) {
     var category by remember { mutableStateOf("sınaq 1") }   // hansı sınağa sual əlavə olunur
     var text by remember { mutableStateOf("") }                // sualın mətni
@@ -1112,6 +1118,23 @@ fun AdminScreen(
     var imageUri by remember { mutableStateOf<Uri?>(null) }     // seçilmiş şəklin telefon daxilindəki ünvanı
     var showDeleteCategoryConfirm by remember { mutableStateOf(false) }  // "Sınağı sil" təsdiq dialoqu
     var showAddCategoryDialog by remember { mutableStateOf(false) }      // "Yeni sınaq" ad soruşma dialoqu
+    // Mövcud sual siyahısı default QAPALI - uzun siyahı admini formdan "scroll
+    // məsafəsi" ilə ayırmasın, lazım olanda bir kliklə aça bilsin
+    var showQuestionList by remember { mutableStateOf(false) }
+
+    // Hər sual saxlanıldıqda göstərilən qısa təsdiq mesajı (bax: aşağıdakı Scaffold-un snackbarHost-u)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Klaviaturada "Next" düyməsi ilə sual->variant1->variant2->variant3->variant4
+    // arasında toxunmadan keçid etmək üçün - admin əlini ekrandan qaldırmadan
+    // bütün sualı yaza bilsin
+    val focusManager = LocalFocusManager.current
+    val option1Focus = remember { FocusRequester() }
+    val option2Focus = remember { FocusRequester() }
+    val option3Focus = remember { FocusRequester() }
+    val option4Focus = remember { FocusRequester() }
+    val optionFocusRequesters = remember { listOf(option1Focus, option2Focus, option3Focus, option4Focus) }
 
     // Seçilmiş kateqoriyanın nömrəsi + (varsa) admin tərəfindən verilmiş öz adı
     val categoryNumber = category.filter { it.isDigit() }.toIntOrNull() ?: 0
@@ -1211,7 +1234,8 @@ fun AdminScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -1270,20 +1294,33 @@ fun AdminScreen(
                             .padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Hazırkı kateqoriyada olan sualların sayı (solda) və bütün sınağı
-                        // silmək düyməsi (sağda) - 25 tövsiyə olunan hədəfdir, sərt limit deyil
+                        // Hazırkı kateqoriyada olan sualların sayı (solda, klikləyərək siyahını
+                        // aç/bağla) və bütün sınağı silmək düyməsi (sağda) - 25 tövsiyə olunan
+                        // hədəfdir, sərt limit deyil
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "\"$categoryDisplayName\" sınağının içindəki suallar (${categoryQuestions.size} / tövsiyə: 25)",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (categoryQuestions.size >= 25) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { showQuestionList = !showQuestionList },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (showQuestionList) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "\"$categoryDisplayName\" sınağının içindəki suallar (${categoryQuestions.size} / tövsiyə: 25)",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (categoryQuestions.size >= 25) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             TextButton(onClick = { showDeleteCategoryConfirm = true }) {
                                 Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(4.dp))
@@ -1291,62 +1328,65 @@ fun AdminScreen(
                             }
                         }
 
-                        Spacer(Modifier.height(8.dp))
-
-                        // Sınağın İÇİNDƏKİ mövcud sualların siyahısı - admin əvvəlcə nə
-                        // olduğunu görür (hər birini ayrıca silə də bilər), sonra elə
-                        // buradan aşağıdakı formla yenisini əlavə edir
-                        if (categoryQuestions.isEmpty()) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    Icons.Default.QuestionAnswer,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(36.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = "Bu sınaqda hələ sual yoxdur.",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        } else {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 260.dp)
-                                    .verticalScroll(rememberScrollState())
-                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 12.dp)
-                            ) {
-                                categoryQuestions.forEachIndexed { index, q ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically
+                        // Sınağın İÇİNDƏKİ mövcud sualların siyahısı - default qapalı, admin
+                        // yuxarıdakı sətrə klikləyəndə açılır. Bu, formu scroll məsafəsindən
+                        // yaxınlaştırır - uzun siyahı hər dəfə yolu kəsmir
+                        AnimatedVisibility(visible = showQuestionList) {
+                            Column {
+                                Spacer(Modifier.height(8.dp))
+                                if (categoryQuestions.isEmpty()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 16.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
-                                        Text(
-                                            text = "${index + 1}. ${q.text}",
-                                            fontSize = 13.sp,
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .padding(vertical = 4.dp)
+                                        Icon(
+                                            Icons.Default.QuestionAnswer,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(36.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                         )
-                                        IconButton(
-                                            onClick = { onDeleteQuestion(category, q.id) },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Close,
-                                                contentDescription = "Sualı sil",
-                                                tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(16.dp)
-                                            )
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = "Bu sınaqda hələ sual yoxdur.",
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                } else {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 260.dp)
+                                            .verticalScroll(rememberScrollState())
+                                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+                                            .padding(horizontal = 12.dp)
+                                    ) {
+                                        categoryQuestions.forEachIndexed { index, q ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "${index + 1}. ${q.text}",
+                                                    fontSize = 13.sp,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .padding(vertical = 4.dp)
+                                                )
+                                                IconButton(
+                                                    onClick = { onDeleteQuestion(category, q.id) },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Close,
+                                                        contentDescription = "Sualı sil",
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -1364,36 +1404,19 @@ fun AdminScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(16.dp))
 
-                        // Şəkil seçmə qutusu: klikləyəndə qalereya açılır, seçilibsə önizləmə göstərilir
-                        Box(
-                            modifier = Modifier
-                                .size(200.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { launcher.launch("image/*") },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (imageUri != null) {
-                                AsyncImage(model = imageUri, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                            } else {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.Image, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-                                    Text("Şəkil seç", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(24.dp))
-
-                        // Sualın mətni üçün giriş sahəsi
+                        // Sualın mətni üçün giriş sahəsi - formda İLK sahə, çünki hər sual üçün
+                        // məcburidir (şəkil əksinə istəyə bağlıdır, ona görə aşağıda qalır).
+                        // "Next" düyməsi klaviaturada birbaşa 1-ci variantın sahəsinə keçir.
                         OutlinedTextField(
                             value = text,
                             onValueChange = { text = it },
                             label = { Text("Sualın mətni") },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { option1Focus.requestFocus() })
                         )
 
                         Spacer(Modifier.height(24.dp))
@@ -1418,16 +1441,72 @@ fun AdminScreen(
                                     value = opt,
                                     onValueChange = setters[index],
                                     label = { Text("Variant ${index + 1}") },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp)
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(optionFocusRequesters[index]),
+                                    shape = RoundedCornerShape(12.dp),
+                                    // Variant 1-3-də "Next" növbəti variantın sahəsinə keçir, son
+                                    // variantda "Done" klaviaturayı bağlayır (artıq giriş qalmayıb)
+                                    keyboardOptions = KeyboardOptions(imeAction = if (index < options.lastIndex) ImeAction.Next else ImeAction.Done),
+                                    keyboardActions = KeyboardActions(
+                                        onNext = { optionFocusRequesters.getOrNull(index + 1)?.requestFocus() },
+                                        onDone = { focusManager.clearFocus() }
+                                    )
                                 )
+                            }
+                        }
+
+                        Spacer(Modifier.height(24.dp))
+
+                        // Şəkil seçmə qutusu: İSTƏYƏ BAĞLI olduğu üçün formda SON yerdə -
+                        // klikləyəndə qalereya açılır, seçilibsə önizləmə + silmə (x) düyməsi göstərilir
+                        Box(
+                            modifier = Modifier
+                                .size(200.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { launcher.launch("image/*") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (imageUri != null) {
+                                AsyncImage(model = imageUri, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                IconButton(
+                                    onClick = { imageUri = null },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(4.dp)
+                                        .size(28.dp)
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Şəkli sil", modifier = Modifier.size(16.dp))
+                                }
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.Image, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Text("Şəkil seç (istəyə bağlı)", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                }
                             }
                         }
 
                         Spacer(Modifier.height(32.dp))
 
                         Button(
-                            onClick = { onUpload(category, text, listOf(option1, option2, option3, option4), correctIndex, imageUri) },
+                            onClick = {
+                                focusManager.clearFocus()
+                                onUpload(category, text, listOf(option1, option2, option3, option4), correctIndex, imageUri) {
+                                    // Uğurla saxlanıldı: formu təmizləyirik ki, admin dərhal
+                                    // növbəti sualı yaza bilsin, əlavə mesajla da təsdiq edirik
+                                    text = ""
+                                    option1 = ""
+                                    option2 = ""
+                                    option3 = ""
+                                    option4 = ""
+                                    correctIndex = 0
+                                    imageUri = null
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("Sual əlavə edildi.") }
+                                }
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
@@ -1449,7 +1528,15 @@ fun AdminScreen(
                     ) {
                         // Bir dəfəyə çoxlu sual əlavə etmək bölməsi: yuxarıda (çiplərdən)
                         // seçilmiş kateqoriyaya tətbiq olunur.
-                        BulkUploadSection(category = category, onBulkUpload = onBulkUpload)
+                        BulkUploadSection(
+                            category = category,
+                            onBulkUpload = { cat, rawText, clearForm ->
+                                onBulkUpload(cat, rawText) {
+                                    clearForm()
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("Suallar əlavə edildi.") }
+                                }
+                            }
+                        )
                         Spacer(Modifier.height(24.dp))
                     }
 
@@ -1487,7 +1574,7 @@ fun AdminScreen(
  * düzgün variantın əvvəlinə "*" qoyulur.
  */
 @Composable
-private fun BulkUploadSection(category: String, onBulkUpload: (String, String) -> Unit) {
+private fun BulkUploadSection(category: String, onBulkUpload: (String, String, () -> Unit) -> Unit) {
     var bulkText by remember { mutableStateOf("") }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1530,7 +1617,7 @@ private fun BulkUploadSection(category: String, onBulkUpload: (String, String) -
         )
         Spacer(Modifier.height(12.dp))
         Button(
-            onClick = { onBulkUpload(category, bulkText) },
+            onClick = { onBulkUpload(category, bulkText) { bulkText = "" } },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -2104,10 +2191,10 @@ fun AdminPreview() {
             onDeleteCategory = {},
             onDeleteQuestion = { _, _ -> },
             onBack = {},
-            onUpload = { _, _, _, _, _ -> },
+            onUpload = { _, _, _, _, _, _ -> },
             onManualUnlock = {},
             onDeviceReset = {},
-            onBulkUpload = { _, _ -> }
+            onBulkUpload = { _, _, _ -> }
         )
     }
 }

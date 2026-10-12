@@ -644,7 +644,11 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         text: String,
         options: List<String>,
         correctIndex: Int,
-        imageUri: Uri?
+        imageUri: Uri?,
+        // Yadda saxlama UĞURLA bitəndə çağırılır - MainActivity.kt bunu formu
+        // təmizləmək və təsdiq mesajı göstərmək üçün istifadə edir ki, admin
+        // ardıcıl bir neçə sual əlavə edərkən əlləri ilə sahələri silməli olmasın
+        onSuccess: () -> Unit = {}
     ) {
         viewModelScope.launch {
             try {
@@ -674,6 +678,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
                     .setValue(newQuestion).await()
 
                 isLoadingQuestions = false   // admin panelində qalırıq (MainActivity.kt-dəki AdminScreen isLoading dəyişəndə siyahını özü təzələyir)
+                onSuccess()
             } catch (e: Exception) {
                 isLoadingQuestions = false
                 errorMessage = "Sual yadda saxlanıla bilmədi: ${e.message}"
@@ -696,7 +701,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
      * Yəni: bloqun birinci sətri - sualın mətni, qalan sətirlər - variantlar,
      * düzgün variantın əvvəlinə "*" qoyulur.
      */
-    fun uploadQuestionsBulk(category: String, rawText: String) {
+    fun uploadQuestionsBulk(category: String, rawText: String, onSuccess: () -> Unit = {}) {
         // Sualları boş sətir(lər)ə görə ayırırıq (hər blok = bir sual)
         val blocks = rawText.split(Regex("\n\\s*\n")).map { it.trim() }.filter { it.isNotBlank() }
         if (blocks.isEmpty()) {
@@ -731,6 +736,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
                 val updates: Map<String, Question> = questions.associateBy { it.id.toString() }
                 questionsRef.child(category).updateChildren(updates).await()
                 isLoadingQuestions = false   // admin panelində qalırıq (MainActivity.kt-dəki AdminScreen isLoading dəyişəndə siyahını özü təzələyir)
+                onSuccess()
             } catch (e: Exception) {
                 isLoadingQuestions = false
                 errorMessage = "Toplu sual saxlanıla bilmədi: ${e.message}"
