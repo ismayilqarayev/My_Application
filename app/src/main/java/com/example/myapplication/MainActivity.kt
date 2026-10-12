@@ -37,7 +37,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -389,6 +391,50 @@ fun AdminLoginDialog(onDismiss: () -> Unit, onVerify: (String, (Boolean) -> Unit
 }
 
 /**
+ * Giriş ekranlarının (RoleSelection/PhoneEntry/NameEntry) ortaq fonu: brend
+ * konteyner rənğindən səthə doğru gradient, üzərində çox yavaş (14 saniyəlik),
+ * aşağı-kontrastlı "nəfəs alan" bir işıq ləkəsi ilə.
+ *
+ * DİQQƏT: bu, rəsmi bank/dövlət portallarında tez-tez görülən "sakit ambient
+ * hərəkət" nümunəsidir - üzən ikon/maskot kimi "playful" elementlər YOXDUR,
+ * çünki tədqiqat göstərir ki, bu cür hərəkətlər rəsmi/etibarlı hiss əvəzinə
+ * oyun tətbiqi hissi yaradır. Hərəkət HƏMİŞƏ fonun özündədir, əsas kart
+ * (üzərindəki məzmun) tərpənmədən, yüksək kontrastda qalır - diqqəti
+ * yayındırmasın və oxunaqlılığı pozmasın deyə.
+ */
+@Composable
+private fun BrandBackgroundBox(content: @Composable BoxScope.() -> Unit) {
+    val drift = rememberInfiniteTransition(label = "brandBgDrift")
+    val t by drift.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 14000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "brandBgDriftT"
+    )
+    val highlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surface)
+                )
+            )
+            .drawBehind {
+                // İşıq ləkəsi ekranın yuxarı hissəsində sol-sağ arasında asta sürüşür (t: 0->1->0)
+                val center = Offset(size.width * (0.25f + 0.5f * t), size.height * 0.18f)
+                val radius = size.maxDimension * 0.55f
+                drawCircle(
+                    brush = Brush.radialGradient(colors = listOf(highlight, Color.Transparent), center = center, radius = radius),
+                    radius = radius,
+                    center = center
+                )
+            },
+        content = content
+    )
+}
+
+/**
  * Tətbiqin ƏSL İLK ekranı: istifadəçi "Şagird" və ya "Müəllim" olduğunu seçir.
  *  - "Şagird" -> telefon+SMS girişinə keçir (PhoneEntryScreen)
  *  - "Müəllim" -> admin parolunu soruşur, düzgündürsə birbaşa Admin panelinə keçir
@@ -408,18 +454,7 @@ fun RoleSelectionScreen(onStudentClick: () -> Unit, onAdminVerify: (String, (Boo
         )
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.surface
-                    )
-                )
-            )
-    ) {
+    BrandBackgroundBox {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -538,18 +573,7 @@ fun PhoneEntryScreen(
     }
 
     // Ekranın əsas gövdəsi: gradient fon + ortada giriş kartı
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.surface
-                    )
-                )
-            )
-    ) {
+    BrandBackgroundBox {
         // Rol seçiminə qayıtma düyməsi
         IconButton(
             onClick = onBack,
@@ -671,18 +695,7 @@ fun NameEntryScreen(isRegistering: Boolean, onRegister: (String, String, String)
     // Telefonun fiziki/jest "geri" hərəkəti də rol seçiminə qaytarsın
     BackHandler(onBack = onBack)
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.surface
-                    )
-                )
-            )
-    ) {
+    BrandBackgroundBox {
         // Rol seçiminə qayıtma düyməsi (digər ekranlarla eyni yerdə/görünüşdə)
         IconButton(
             onClick = onBack,
