@@ -11,12 +11,19 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,9 +37,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -830,90 +840,104 @@ fun CategorySelectionScreen(
         },
         containerColor = MaterialTheme.colorScheme.surface
     ) { padding ->
-        Column(
+        // "LazyVerticalGrid" (əvvəlki 3-lük "chunked" Row-lardan fərqli olaraq) hər
+        // kartı EYNİ enli sütuna yerləşdirir - sayı 3-ə bölünmürsə (məs. 25-in son
+        // sətrində 1 kart qalanda), köhnə "SpaceEvenly" Row bu tək kartı sətrin
+        // ortasına "sərirdi" və yuxarıdakı sətirlərlə düzülmürdü. İndi hər kart öz
+        // sütununda qalır, son sətir natamam olsa belə düzgün görünür.
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
             modifier = Modifier
                 .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())   // 25 kateqoriya ekrana sığmaya bilər, ona görə skroll aktivdir
-                .padding(horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
+            items(categories, key = { it.first }) { (name, _) ->
+                // "sınaq 7" -> 7 rəqəmini ayırırıq
+                val number = name.filter { it.isDigit() }.toIntOrNull() ?: 0
+                // Yalnız 1-3 üçün hazır sual dəsti var; 4-dən yuxarı yalnız ödənişdən sonra açılır
+                val isLocked = number >= 4 && !isUnlocked
 
-            // Kateqoriyaları 3-lük qruplara bölüb, hər qrupu bir sətirdə göstəririk
-            categories.chunked(3).forEach { rowCategories ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    rowCategories.forEach { (name, _) ->
-                        // "sınaq 7" -> 7 rəqəmini ayırırıq
-                        val number = name.filter { it.isDigit() }.toIntOrNull() ?: 0
-                        // Yalnız 1-3 üçün hazır sual dəsti var; 4-dən yuxarı yalnız ödənişdən sonra açılır
-                        val isLocked = number >= 4 && !isUnlocked
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(vertical = 12.dp)
-                        ) {
-                            // "Box" ilə kilid ikonunu kartın küncünə "yapışdırırıq" (TopEnd)
-                            Box(contentAlignment = Alignment.TopEnd) {
-                                Surface(
-                                    onClick = {
-                                        // Kilidli deyilsə - normal seçim; kilidlidirsə - ödəniş dialoqunu aç
-                                        if (!isLocked) onCategorySelected(name) else onLockedClick()
-                                    },
-                                    modifier = Modifier.size(90.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    // Kilidli kartların rəngi solğun (surfaceVariant), açıq kartlar isə canlı rəngdə
-                                    color = if (isLocked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
-                                    tonalElevation = if (isLocked) 0.dp else 4.dp,
-                                    shadowElevation = if (isLocked) 0.dp else 4.dp
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = number.toString(),
-                                            fontSize = 32.sp,
-                                            fontWeight = FontWeight.Black,
-                                            color = if (isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                }
-
-                                // Kilidli kartların üzərində kiçik qırmızı "kilid" ikonu göstərilir
-                                if (isLocked) {
-                                    Surface(
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .offset(x = 6.dp, y = (-6).dp),   // kartın küncündən bir az kənara çıxsın deyə
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.error,
-                                        shadowElevation = 4.dp
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Lock,
-                                            contentDescription = "Locked",
-                                            tint = Color.White,
-                                            modifier = Modifier.padding(6.dp)
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                // Admin bu sınağa xüsusi ad veribsə (məs. "Fizika") onu göstəririk,
-                                // yoxdursa defolt "sınaq N" adı qalır
-                                text = categoryNames[number] ?: name,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            )
-                        }
+                CategoryCard(
+                    number = number,
+                    // Admin bu sınağa xüsusi ad veribsə (məs. "Fizika") onu göstəririk,
+                    // yoxdursa defolt "sınaq N" adı qalır
+                    label = categoryNames[number] ?: name,
+                    isLocked = isLocked,
+                    onClick = {
+                        // Kilidli deyilsə - normal seçim; kilidlidirsə - ödəniş dialoqunu aç
+                        if (!isLocked) onCategorySelected(name) else onLockedClick()
                     }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * CategorySelectionScreen-dəki grid-in tək bir xücrəsi: dairəvi/künclü nömrə
+ * kartı + altında ad, kilidlidirsə kiçik qırmızı kilid nişanı ilə.
+ * Ayrıca composable-a çıxarılıb ki, LazyVerticalGrid-in "items" bloku sadə qalsın.
+ */
+@Composable
+private fun CategoryCard(number: Int, label: String, isLocked: Boolean, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(vertical = 12.dp)
+    ) {
+        // "Box" ilə kilid ikonunu kartın küncünə "yapışdırırıq" (TopEnd)
+        Box(contentAlignment = Alignment.TopEnd) {
+            Surface(
+                onClick = onClick,
+                modifier = Modifier.size(90.dp),
+                shape = RoundedCornerShape(16.dp),
+                // Kilidli kartların rəngi solğun (surfaceVariant), açıq kartlar isə canlı rəngdə
+                color = if (isLocked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
+                tonalElevation = if (isLocked) 0.dp else 4.dp,
+                shadowElevation = if (isLocked) 0.dp else 4.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = number.toString(),
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
-            Spacer(modifier = Modifier.height(32.dp))
+
+            // Kilidli kartların üzərində kiçik qırmızı "kilid" ikonu göstərilir
+            if (isLocked) {
+                Surface(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .offset(x = 6.dp, y = (-6).dp),   // kartın küncündən bir az kənara çıxsın deyə
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.error,
+                    shadowElevation = 4.dp
+                ) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = "Locked",
+                        tint = Color.White,
+                        modifier = Modifier.padding(6.dp)
+                    )
+                }
+            }
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.width(90.dp)
+        )
     }
 }
 
@@ -1114,10 +1138,17 @@ fun AdminScreen(
         imageUri = uri
     }
 
+    // Admin panelində 3 ayrı vəzifə var (sualları idarə et, toplu yüklə, ödəniş/cihaz) -
+    // əvvəllər bunlar HAMISI bir-birinin altında, sonsuz bir scroll şəklində idi.
+    // İndi "TabRow" ilə 3 ayrı bölməyə bölünüb ki, admin axtardığını tez tapsın,
+    // hər dəfə lazım olmayan hissələri scroll edib keçməyə məcbur olmasın.
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val tabTitles = listOf("Suallar", "Toplu yüklə", "Ödəniş və cihaz")
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Yeni Sual Əlavə Et", fontWeight = FontWeight.Bold) },
+                title = { Text("Admin Paneli", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
                 }
@@ -1128,16 +1159,15 @@ fun AdminScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Bütün mövcud kateqoriyaları üfüqi sürüşdürülə bilən "çip" (chip) siyahısı kimi göstəririk,
-            // sonunda isə yeni sınaq əlavə etmək üçün bir çip qoyulur
+            // Bütün mövcud kateqoriyaları üfüqi sürüşdürülə bilən "çip" (chip) siyahısı kimi
+            // göstəririk - hansı tab-da olursa olsun HƏMİŞƏ görünür, çünki hər üç bölmə də
+            // (sual əlavə et, toplu yüklə) elə bu seçilmiş kateqoriyaya tətbiq olunur
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.Start
             ) {
                 (1..categoryCount).filter { it !in deletedCategories }.forEach { i ->
@@ -1156,189 +1186,239 @@ fun AdminScreen(
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
-
-            // Hazırkı kateqoriyada olan sualların sayı (solda) və bütün sınağı
-            // silmək düyməsi (sağda) - 25 tövsiyə olunan hədəfdir, sərt limit deyil
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "\"$categoryDisplayName\" sınağının içindəki suallar (${categoryQuestions.size} / tövsiyə: 25)",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (categoryQuestions.size >= 25) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(onClick = { showDeleteCategoryConfirm = true }) {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Sınağı sil", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Sınağın İÇİNDƏKİ mövcud sualların siyahısı - admin əvvəlcə nə
-            // olduğunu görür (hər birini ayrıca silə də bilər), sonra elə
-            // buradan aşağıdakı formla yenisini əlavə edir
-            if (categoryQuestions.isEmpty()) {
-                Text(
-                    text = "Bu sınaqda hələ sual yoxdur.",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 260.dp)
-                        .verticalScroll(rememberScrollState())
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 12.dp)
-                ) {
-                    categoryQuestions.forEachIndexed { index, q ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "${index + 1}. ${q.text}",
-                                fontSize = 13.sp,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(vertical = 4.dp)
-                            )
-                            IconButton(
-                                onClick = { onDeleteQuestion(category, q.id) },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Sualı sil",
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            Text(
-                text = "Yeni sual əlavə et",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // Şəkil seçmə qutusu: klikləyəndə qalereya açılır, seçilibsə önizləmə göstərilir
-            Box(
-                modifier = Modifier
-                    .size(200.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable { launcher.launch("image/*") },
-                contentAlignment = Alignment.Center
-            ) {
-                if (imageUri != null) {
-                    AsyncImage(model = imageUri, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Image, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-                        Text("Şəkil seç", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            // Sualın mətni üçün giriş sahəsi
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Sualın mətni") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            )
-
-            Spacer(Modifier.height(24.dp))
-
-            Text("Variantlar (Düzgün olanı seçin):", modifier = Modifier.align(Alignment.Start), fontWeight = FontWeight.Bold)
-
-            // 4 variantı və onların "dəyişdirici" (setter) funksiyalarını siyahı şəklində
-            // saxlamaq, aşağıdakı "forEachIndexed" ilə TƏKRARSIZ (eyni kodu 4 dəfə yazmadan) işləməyə imkan verir
-            val options = listOf(option1, option2, option3, option4)
-            val setters = listOf<(String) -> Unit>({ option1 = it }, { option2 = it }, { option3 = it }, { option4 = it })
-
-            options.forEachIndexed { index, opt ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Radio düyməsi: yalnız BİR variant "düzgün" seçilə bilər
-                    RadioButton(selected = correctIndex == index, onClick = { correctIndex = index })
-                    OutlinedTextField(
-                        value = opt,
-                        onValueChange = setters[index],
-                        label = { Text("Variant ${index + 1}") },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
+            TabRow(selectedTabIndex = selectedTab) {
+                tabTitles.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = { Text(title, fontSize = 13.sp) }
                     )
                 }
             }
 
-            Spacer(Modifier.height(40.dp))
+            // Tab-lar arasında keçid yumşaq (fade+slide) olsun deyə - hər tab-ın
+            // içəriyi öz skroll vəziyyətini saxlayır (fərqli "remember" blokları)
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(150)) },
+                label = "AdminTabTransition",
+                modifier = Modifier.weight(1f)
+            ) { tab ->
+                when (tab) {
+                    0 -> Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Hazırkı kateqoriyada olan sualların sayı (solda) və bütün sınağı
+                        // silmək düyməsi (sağda) - 25 tövsiyə olunan hədəfdir, sərt limit deyil
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "\"$categoryDisplayName\" sınağının içindəki suallar (${categoryQuestions.size} / tövsiyə: 25)",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (categoryQuestions.size >= 25) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { showDeleteCategoryConfirm = true }) {
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Sınağı sil", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                            }
+                        }
 
-            Button(
-                onClick = { onUpload(category, text, listOf(option1, option2, option3, option4), correctIndex, imageUri) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(60.dp),
-                shape = RoundedCornerShape(12.dp),
-                // Sual mətni və ən azı 2 variant doldurulmayınca, yüklənərkən isə düymə deaktivdir
-                enabled = !isLoading && text.isNotBlank() && option1.isNotBlank() && option2.isNotBlank()
-            ) {
-                if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                else Text("Bazada Yadda Saxla", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+
+                        // Sınağın İÇİNDƏKİ mövcud sualların siyahısı - admin əvvəlcə nə
+                        // olduğunu görür (hər birini ayrıca silə də bilər), sonra elə
+                        // buradan aşağıdakı formla yenisini əlavə edir
+                        if (categoryQuestions.isEmpty()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Default.QuestionAnswer,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(36.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = "Bu sınaqda hələ sual yoxdur.",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 260.dp)
+                                    .verticalScroll(rememberScrollState())
+                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 12.dp)
+                            ) {
+                                categoryQuestions.forEachIndexed { index, q ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${index + 1}. ${q.text}",
+                                            fontSize = 13.sp,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .padding(vertical = 4.dp)
+                                        )
+                                        IconButton(
+                                            onClick = { onDeleteQuestion(category, q.id) },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Sualı sil",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(20.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(20.dp))
+
+                        Text(
+                            text = "Yeni sual əlavə et",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+
+                        // Şəkil seçmə qutusu: klikləyəndə qalereya açılır, seçilibsə önizləmə göstərilir
+                        Box(
+                            modifier = Modifier
+                                .size(200.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { launcher.launch("image/*") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (imageUri != null) {
+                                AsyncImage(model = imageUri, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.Image, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Text("Şəkil seç", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(24.dp))
+
+                        // Sualın mətni üçün giriş sahəsi
+                        OutlinedTextField(
+                            value = text,
+                            onValueChange = { text = it },
+                            label = { Text("Sualın mətni") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        Spacer(Modifier.height(24.dp))
+
+                        Text("Variantlar (Düzgün olanı seçin):", modifier = Modifier.align(Alignment.Start), fontWeight = FontWeight.Bold)
+
+                        // 4 variantı və onların "dəyişdirici" (setter) funksiyalarını siyahı şəklində
+                        // saxlamaq, aşağıdakı "forEachIndexed" ilə TƏKRARSIZ (eyni kodu 4 dəfə yazmadan) işləməyə imkan verir
+                        val options = listOf(option1, option2, option3, option4)
+                        val setters = listOf<(String) -> Unit>({ option1 = it }, { option2 = it }, { option3 = it }, { option4 = it })
+
+                        options.forEachIndexed { index, opt ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Radio düyməsi: yalnız BİR variant "düzgün" seçilə bilər
+                                RadioButton(selected = correctIndex == index, onClick = { correctIndex = index })
+                                OutlinedTextField(
+                                    value = opt,
+                                    onValueChange = setters[index],
+                                    label = { Text("Variant ${index + 1}") },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(32.dp))
+
+                        Button(
+                            onClick = { onUpload(category, text, listOf(option1, option2, option3, option4), correctIndex, imageUri) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            // Sual mətni və ən azı 2 variant doldurulmayınca, yüklənərkən isə düymə deaktivdir
+                            enabled = !isLoading && text.isNotBlank() && option1.isNotBlank() && option2.isNotBlank()
+                        ) {
+                            if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                            else Text("Bazada Yadda Saxla", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.height(24.dp))
+                    }
+
+                    1 -> Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp)
+                    ) {
+                        // Bir dəfəyə çoxlu sual əlavə etmək bölməsi: yuxarıda (çiplərdən)
+                        // seçilmiş kateqoriyaya tətbiq olunur.
+                        BulkUploadSection(category = category, onBulkUpload = onBulkUpload)
+                        Spacer(Modifier.height(24.dp))
+                    }
+
+                    else -> Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp)
+                    ) {
+                        // Ödənişi əl ilə açma bölməsi: şagird kart-karta köçürməni etdikdən
+                        // sonra, admin bura həmin telefon nömrəsini yazıb "Aç" düyməsinə basır -
+                        // bank inteqrasiyası olmadan, birbaşa Firebase-ə yazılır (pulsuzdur).
+                        ManualUnlockSection(onUnlock = onManualUnlock)
+
+                        Spacer(Modifier.height(32.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(24.dp))
+
+                        // Cihaz sıfırlama bölməsi: hər hesab ilk aktivləşdiyi telefona
+                        // "bağlanır" (paylaşılmanın qarşısını almaq üçün) - şagirdin telefonu
+                        // dəyişəndə admin bura nömrəni yazıb sıfırlayır ki, yeni telefon
+                        // həmin hesaba yenidən bağlana bilsin.
+                        DeviceResetSection(onReset = onDeviceReset)
+                        Spacer(Modifier.height(24.dp))
+                    }
+                }
             }
-
-            Spacer(Modifier.height(48.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(24.dp))
-
-            // Bir dəfəyə çoxlu sual əlavə etmək bölməsi: yuxarıda seçilmiş
-            // kateqoriyaya (chip-lərdən) tətbiq olunur.
-            BulkUploadSection(category = category, onBulkUpload = onBulkUpload)
-
-            Spacer(Modifier.height(48.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(24.dp))
-
-            // Ödənişi əl ilə açma bölməsi: şagird kart-karta köçürməni etdikdən
-            // sonra, admin bura həmin telefon nömrəsini yazıb "Aç" düyməsinə basır -
-            // bank inteqrasiyası olmadan, birbaşa Firebase-ə yazılır (pulsuzdur).
-            ManualUnlockSection(onUnlock = onManualUnlock)
-
-            Spacer(Modifier.height(32.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(24.dp))
-
-            // Cihaz sıfırlama bölməsi: hər hesab ilk aktivləşdiyi telefona
-            // "bağlanır" (paylaşılmanın qarşısını almaq üçün) - şagirdin telefonu
-            // dəyişəndə admin bura nömrəni yazıb sıfırlayır ki, yeni telefon
-            // həmin hesaba yenidən bağlana bilsin.
-            DeviceResetSection(onReset = onDeviceReset)
-            Spacer(Modifier.height(32.dp))
         }
     }
 }
@@ -1547,6 +1627,10 @@ fun QuestionScreen(
     // hər yeni sualda avtomatik sıfırlanır (əks halda köhnə sualın seçimi qalardı).
     var selectedIndex by remember(question.id) { mutableStateOf<Int?>(null) }
 
+    // Cavab seçiləndə telefon yüngülcə "titrəsin" ki, toxunuşun qəbul olunduğu
+    // hiss olunsun (düzgün/səhv üçün fərqli hiss - ekrana baxmadan da sezilir)
+    val haptic = LocalHapticFeedback.current
+
     // Seçim ediləndən qısa müddət sonra (səhv/düzgün göründükdən sonra) növbəti
     // suala keçirik - "Təsdiqlə" düyməsi olmadan, amma cavabı görmək üçün kifayət vaxt
     LaunchedEffect(selectedIndex, question.id) {
@@ -1556,6 +1640,20 @@ fun QuestionScreen(
             onAnswer(index)
         }
     }
+
+    // Vaxt 10 saniyədən az qalanda taймer qutusu yüngülcə "döyünür" (pulse) ki,
+    // istifadəçi gözünü sualdan ayırmadan da vaxtın bitməkdə olduğunu hiss etsin
+    val isCritical = timeLeft in 1..10
+    val criticalPulse = rememberInfiniteTransition(label = "timerPulse")
+    val pulseScale by criticalPulse.animateFloat(
+        initialValue = 1f,
+        targetValue = if (isCritical) 1.12f else 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "timerPulseScale"
+    )
 
     if (showExitConfirm) {
         AlertDialog(
@@ -1594,8 +1692,10 @@ fun QuestionScreen(
                         Text("Sual $currentNum", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                         Text("Ümumi: $totalNum", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    // Vaxt qutusu: 30 saniyədən az qalanda rəngi qırmızıya (xəbərdarlıq rənginə) dəyişir
+                    // Vaxt qutusu: 30 saniyədən az qalanda rəngi qırmızıya (xəbərdarlıq rənginə)
+                    // dəyişir, 10 saniyədən az qalanda isə yuxarıdaki pulseScale sayəsində yüngülcə döyünür
                     Surface(
+                        modifier = Modifier.scale(pulseScale),
                         color = if (timeLeft < 30) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -1704,7 +1804,16 @@ fun QuestionScreen(
                     }
 
                     Surface(
-                        onClick = { if (selectedIndex == null) selectedIndex = index },
+                        onClick = {
+                            if (selectedIndex == null) {
+                                selectedIndex = index
+                                // Düzgün/səhv cavab üçün fərqli haptic hiss - istifadəçi
+                                // rənglərə baxmadan da nəticəni "əlində" hiss edir
+                                haptic.performHapticFeedback(
+                                    if (index == question.correctAnswerIndex) HapticFeedbackType.Confirm else HapticFeedbackType.Reject
+                                )
+                            }
+                        },
                         enabled = selectedIndex == null,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -1743,18 +1852,24 @@ fun QuestionScreen(
  * İmtahan bitəndə göstərilən nəticə ekranı.
  * Uğur şərti: xal >= ümumi sualların yarısı. Buna görə rənglər (yaşıl/qırmızı)
  * və ikon (✓/✗) dəyişir.
+ *
+ * DİQQƏT: rənglər birbaşa (hardcoded) hex dəyərlər DEYİL, tema (MaterialTheme.colorScheme)
+ * üzərindən götürülür - əks halda tünd rejimdə bu ekran işıqlı qalıb qalanlarla uyuşmazdı.
  */
 @Composable
 fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> Unit) {
     val isSuccess = score >= total / 2
+    val accentColor = if (isSuccess) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+    val accentContainer = if (isSuccess) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                // Uğurlu olanda yaşılımtıl, uğursuz olanda qırmızımtıl fon
+                // Uğurlu olanda yaşılımtıl, uğursuz olanda qırmızımtıl fon - temanın öz
+                // "container" rənglərindən, ona görə tünd/açıq rejimdə avtomatik düzgün görünür
                 Brush.verticalGradient(
-                    colors = if (isSuccess) listOf(Color(0xFFE8F5E9), Color.White) else listOf(Color(0xFFFFEBEE), Color.White)
+                    colors = listOf(accentContainer, MaterialTheme.colorScheme.surface)
                 )
             )
     ) {
@@ -1769,19 +1884,20 @@ fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> U
                 imageVector = if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
                 contentDescription = null,
                 modifier = Modifier.size(120.dp),
-                tint = if (isSuccess) Color(0xFF4CAF50) else Color(0xFFF44336)
+                tint = accentColor
             )
             Spacer(Modifier.height(24.dp))
             Text(
                 text = if (isSuccess) "Təbriklər!" else "Yenidən Cəhd Et!",
                 fontSize = 36.sp,
                 fontWeight = FontWeight.Black,
-                color = if (isSuccess) Color(0xFF2E7D32) else Color(0xFFC62828)
+                color = accentColor
             )
             Text(
                 text = "${userInfo?.firstName} ${userInfo?.lastName}",
                 fontSize = 20.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Spacer(Modifier.height(48.dp))
