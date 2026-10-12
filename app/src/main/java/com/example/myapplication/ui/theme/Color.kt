@@ -9,17 +9,17 @@ import androidx.compose.ui.graphics.Color
 //
 // Neytral/yaşıl/qırmızı (xəta) çalarlar əvvəlcə Birbank (Kapital Bank-ın rəqəmsal
 // bank tətbiqi, birbank.az) saytının CSS dəyişənlərindən götürülmüşdü. Əsas brend
-// rəngi isə qırmızıdan "sakit mavi"yə dəyişdirilib - imtahan kontekstində qırmızı
-// (xəbərdarlıq/səhv ilə assosiasiya olunan rəng) əvəzinə mavi daha rahat/sakit
-// hiss yaradır, diqqəti yayındırmır.
+// rəngi (BrandPrimary*) bir neçə dəfə dəyişdirilib (qırmızı -> sakit mavi -> yenidən
+// qırmızı) - ona görə "neutral" adlandırılıb ki, növbəti dəyişiklik yalnız bu 4
+// dəyərin özünü yeniləməklə olsun, adı il rəngi uyğunsuz qalmasın.
 
-// ---- Əsas brend rəngi: "sakit mavi" (əsas düymələr, başlıqlar, aktiv vəziyyət) ----
-val CalmBlue = Color(0xFF2B6CB0)           // əsas brend rəngi (əsas düymələr)
-val CalmBlueDark = Color(0xFF1A4971)       // tünd variant (basılı/hover vəziyyəti üçün)
-val CalmBlueLight = Color(0xFF6FA8DC)      // açıq variant (tünd rejimdə primary üçün əlverişlidir)
-val CalmBlueContainer = Color(0xFFE6F0FA)  // çox açıq mavi fon (container rəngi)
+// ---- Əsas brend rəngi (əsas düymələr, başlıqlar, aktiv vəziyyət) ----
+val BrandPrimary = Color(0xFFEC3342)           // əsas brend rəngi (əsas düymələr)
+val BrandPrimaryDark = Color(0xFFD42534)       // tünd variant (basılı/hover vəziyyəti üçün)
+val BrandPrimaryLight = Color(0xFFF74454)      // açıq variant (tünd rejimdə primary üçün əlverişlidir)
+val BrandPrimaryContainer = Color(0xFFFDF0F1)  // çox açıq fon (container rəngi)
 
-// ---- Xəta/təhlükə üçün ayrıca çalar (əsas rəngdən - indi mavi - asılı deyil) ----
+// ---- Xəta/təhlükə üçün ayrıca çalar (əsas rəngdən asılı deyil) ----
 val BirbankCrimson = Color(0xFFB11117)     // tünd krimzon - xəta mesajları üçün
 val BirbankCrimsonContainer = Color(0xFFFDF0F1) // çox açıq qırmızı fon (xəta container rəngi)
 

@@ -11,12 +11,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-// Tünd rejim üçün rəng sxemi - brend rəngi "sakit mavi" əsas rəng olaraq
-// saxlanılır, tünd fonda daha yaxşı görünsün deyə açıq tonu (CalmBlueLight) işlədilir
+// Tünd rejim üçün rəng sxemi - brend rəngi əsas rəng olaraq saxlanılır, tünd
+// fonda daha yaxşı görünsün deyə açıq tonu (BrandPrimaryLight) işlədilir
 private val DarkColorScheme = darkColorScheme(
-    primary = CalmBlueLight,
-    onPrimary = Color(0xFF0D2B40),
-    primaryContainer = CalmBlueDark,
+    primary = BrandPrimaryLight,
+    onPrimary = Color(0xFF3A0A0E),
+    primaryContainer = BrandPrimaryDark,
     onPrimaryContainer = BirbankWhite,
     secondary = BirbankGreenContainer,
     onSecondary = BirbankGreen,
@@ -35,12 +35,12 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 // Açıq rejim üçün rəng sxemi - neytral/yaşıl/qırmızı çalarlar Birbank saytının öz
-// CSS dəyişənlərindən götürülüb, brend rəngi isə "sakit mavi"yə dəyişdirilib
+// CSS dəyişənlərindən götürülüb
 private val LightColorScheme = lightColorScheme(
-    primary = CalmBlue,
+    primary = BrandPrimary,
     onPrimary = BirbankWhite,
-    primaryContainer = CalmBlueContainer,
-    onPrimaryContainer = CalmBlueDark,
+    primaryContainer = BrandPrimaryContainer,
+    onPrimaryContainer = BrandPrimaryDark,
     secondary = BirbankGreen,
     onSecondary = BirbankWhite,
     secondaryContainer = BirbankGreenContainer,
