@@ -11,12 +11,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-// Tünd rejim üçün rəng sxemi - Birbank-ın brend qırmızısı əsas rəng olaraq
-// saxlanılır, tünd fonda daha yaxşı görünsün deyə açıq tonu (BirbankRedLight) işlədilir
+// Tünd rejim üçün rəng sxemi - brend rəngi "sakit mavi" əsas rəng olaraq
+// saxlanılır, tünd fonda daha yaxşı görünsün deyə açıq tonu (CalmBlueLight) işlədilir
 private val DarkColorScheme = darkColorScheme(
-    primary = BirbankRedLight,
-    onPrimary = Color(0xFF3A0A0E),
-    primaryContainer = BirbankRedDark,
+    primary = CalmBlueLight,
+    onPrimary = Color(0xFF0D2B40),
+    primaryContainer = CalmBlueDark,
     onPrimaryContainer = BirbankWhite,
     secondary = BirbankGreenContainer,
     onSecondary = BirbankGreen,
@@ -34,13 +34,13 @@ private val DarkColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF3A3C3F)
 )
 
-// Açıq rejim üçün rəng sxemi - Birbank saytının öz CSS dəyişənlərindən
-// (--red, --dark-green, --dark-charcoal, --soft-gray və s.) götürülüb
+// Açıq rejim üçün rəng sxemi - neytral/yaşıl/qırmızı çalarlar Birbank saytının öz
+// CSS dəyişənlərindən götürülüb, brend rəngi isə "sakit mavi"yə dəyişdirilib
 private val LightColorScheme = lightColorScheme(
-    primary = BirbankRed,
+    primary = CalmBlue,
     onPrimary = BirbankWhite,
-    primaryContainer = BirbankRedContainer,
-    onPrimaryContainer = BirbankRedDark,
+    primaryContainer = CalmBlueContainer,
+    onPrimaryContainer = CalmBlueDark,
     secondary = BirbankGreen,
     onSecondary = BirbankWhite,
     secondaryContainer = BirbankGreenContainer,
@@ -53,7 +53,7 @@ private val LightColorScheme = lightColorScheme(
     onSurfaceVariant = BirbankMediumGray,
     error = BirbankCrimson,
     onError = BirbankWhite,
-    errorContainer = BirbankRedContainer,
+    errorContainer = BirbankCrimsonContainer,
     onErrorContainer = BirbankCrimson,
     outline = BirbankBorderGray,
     outlineVariant = BirbankPaleGray

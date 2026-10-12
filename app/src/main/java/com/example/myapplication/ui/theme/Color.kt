@@ -7,18 +7,21 @@ import androidx.compose.ui.graphics.Color
 // qalan hissəsində isə biz həmişə "MaterialTheme.colorScheme.primary" kimi
 // istifadə edirik.
 //
-// Palet Birbank (Kapital Bank-ın rəqəmsal bank tətbiqi, birbank.az) tətbiqinin
-// öz sayt CSS dəyişənlərindən (--red, --dark-green, --dark-charcoal və s.)
-// çıxarılıb ki, uydurma rəng əvəzinə real brendə uyğun olsun.
+// Neytral/yaşıl/qırmızı (xəta) çalarlar əvvəlcə Birbank (Kapital Bank-ın rəqəmsal
+// bank tətbiqi, birbank.az) saytının CSS dəyişənlərindən götürülmüşdü. Əsas brend
+// rəngi isə qırmızıdan "sakit mavi"yə dəyişdirilib - imtahan kontekstində qırmızı
+// (xəbərdarlıq/səhv ilə assosiasiya olunan rəng) əvəzinə mavi daha rahat/sakit
+// hiss yaradır, diqqəti yayındırmır.
 
-// ---- Əsas brend qırmızısı (Birbank-ın düymələrində istifadə olunan rəng) ----
-val BirbankRed = Color(0xFFEC3342)         // əsas brend rəngi (əsas düymələr)
-val BirbankRedDark = Color(0xFFD42534)     // tünd variant (basılı/hover vəziyyəti üçün)
-val BirbankRedLight = Color(0xFFF74454)    // açıq variant (tünd rejimdə primary üçün əlverişlidir)
-val BirbankRedContainer = Color(0xFFFDF0F1) // çox açıq qırmızı fon (container rəngi)
+// ---- Əsas brend rəngi: "sakit mavi" (əsas düymələr, başlıqlar, aktiv vəziyyət) ----
+val CalmBlue = Color(0xFF2B6CB0)           // əsas brend rəngi (əsas düymələr)
+val CalmBlueDark = Color(0xFF1A4971)       // tünd variant (basılı/hover vəziyyəti üçün)
+val CalmBlueLight = Color(0xFF6FA8DC)      // açıq variant (tünd rejimdə primary üçün əlverişlidir)
+val CalmBlueContainer = Color(0xFFE6F0FA)  // çox açıq mavi fon (container rəngi)
 
-// ---- Xəta/təhlükə üçün ayrıca çalar (əsas qırmızıdan fərqləndirmək üçün) ----
+// ---- Xəta/təhlükə üçün ayrıca çalar (əsas rəngdən - indi mavi - asılı deyil) ----
 val BirbankCrimson = Color(0xFFB11117)     // tünd krimzon - xəta mesajları üçün
+val BirbankCrimsonContainer = Color(0xFFFDF0F1) // çox açıq qırmızı fon (xəta container rəngi)
 
 // ---- Aksent yaşıl (uğur, depozit/əmanət kimi "müsbət" əməliyyatlar üçün) ----
 val BirbankGreen = Color(0xFF066A3A)
