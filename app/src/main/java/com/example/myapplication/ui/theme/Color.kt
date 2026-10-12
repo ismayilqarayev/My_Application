@@ -41,3 +41,20 @@ val BirbankWhite = Color(0xFFFFFFFF)
 val BirbankDarkBackground = Color(0xFF121314)  // Birbank saytının "charcoal-black-deep" dəyişəni
 val BirbankDarkSurface = Color(0xFF1E1F21)
 val BirbankDarkBorder = Color(0xFF55595D)
+
+// ---- "Dərs rəfi" aksentləri: hər sınaq kartına fərqli fənn ikonu+rəngi verməkçün ----
+// (CategorySelectionScreen-də dövri olaraq istifadə olunur ki, kartlar eyni görünməsin,
+// məktəb dərsliyi/dəftər hissi versin). Hər rəngin öz açıq konteyner fonu + tünd mətn/ikon
+// tonu var - kontrast üçün.
+val LessonBlue = Color(0xFF2B6CB0)
+val LessonBlueContainer = Color(0xFFE6F0FA)
+val LessonOrange = Color(0xFFB5650C)
+val LessonOrangeContainer = Color(0xFFFCE9D2)
+val LessonGreen = Color(0xFF2E7D4F)
+val LessonGreenContainer = Color(0xFFE1F0E7)
+val LessonPurple = Color(0xFF6B4FA0)
+val LessonPurpleContainer = Color(0xFFEDE7F8)
+val LessonPink = Color(0xFFB5467E)
+val LessonPinkContainer = Color(0xFFFBE7F0)
+val LessonTeal = Color(0xFF127D82)
+val LessonTealContainer = Color(0xFFDFF3F4)

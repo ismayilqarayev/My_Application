@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -55,8 +56,21 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.myapplication.ui.theme.MyApplicationTheme
+import com.example.myapplication.ui.theme.LessonBlue
+import com.example.myapplication.ui.theme.LessonBlueContainer
+import com.example.myapplication.ui.theme.LessonOrange
+import com.example.myapplication.ui.theme.LessonOrangeContainer
+import com.example.myapplication.ui.theme.LessonGreen
+import com.example.myapplication.ui.theme.LessonGreenContainer
+import com.example.myapplication.ui.theme.LessonPurple
+import com.example.myapplication.ui.theme.LessonPurpleContainer
+import com.example.myapplication.ui.theme.LessonPink
+import com.example.myapplication.ui.theme.LessonPinkContainer
+import com.example.myapplication.ui.theme.LessonTeal
+import com.example.myapplication.ui.theme.LessonTealContainer
 import kotlinx.coroutines.delay
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
 // ==========================================================================
@@ -859,6 +873,9 @@ fun CategorySelectionScreen(
                 val number = name.filter { it.isDigit() }.toIntOrNull() ?: 0
                 // Yalnız 1-3 üçün hazır sual dəsti var; 4-dən yuxarı yalnız ödənişdən sonra açılır
                 val isLocked = number >= 4 && !isUnlocked
+                // Hər açıq kartın öz fənn ikonu+rəngi olsun deyə (dövri) - "dərs rəfi"
+                // hissi versin, hamısı eyni görünən kvadrat olmasın
+                val accent = lessonAccents[(number - 1).mod(lessonAccents.size)]
 
                 CategoryCard(
                     number = number,
@@ -866,6 +883,7 @@ fun CategorySelectionScreen(
                     // yoxdursa defolt "sınaq N" adı qalır
                     label = categoryNames[number] ?: name,
                     isLocked = isLocked,
+                    accent = accent,
                     onClick = {
                         // Kilidli deyilsə - normal seçim; kilidlidirsə - ödəniş dialoqunu aç
                         if (!isLocked) onCategorySelected(name) else onLockedClick()
@@ -876,13 +894,27 @@ fun CategorySelectionScreen(
     }
 }
 
+/** Bir dərs ikonu + ona uyğun açıq fon/tünd mətn rəngi cütü. */
+private data class LessonAccent(val icon: ImageVector, val container: Color, val onContainer: Color)
+
+// Açıq kartlar bu siyahıdan dövri (number % size) olaraq ikon+rəng götürür -
+// bax: ui/theme/Color.kt-də "Dərs rəfi aksentləri" qeydi
+private val lessonAccents = listOf(
+    LessonAccent(Icons.Default.Book, LessonBlueContainer, LessonBlue),
+    LessonAccent(Icons.Default.Edit, LessonOrangeContainer, LessonOrange),
+    LessonAccent(Icons.Default.Science, LessonGreenContainer, LessonGreen),
+    LessonAccent(Icons.Default.Public, LessonPurpleContainer, LessonPurple),
+    LessonAccent(Icons.Default.Calculate, LessonPinkContainer, LessonPink),
+    LessonAccent(Icons.Default.Palette, LessonTealContainer, LessonTeal)
+)
+
 /**
- * CategorySelectionScreen-dəki grid-in tək bir xücrəsi: dairəvi/künclü nömrə
- * kartı + altında ad, kilidlidirsə kiçik qırmızı kilid nişanı ilə.
+ * CategorySelectionScreen-dəki grid-in tək bir xücrəsi: künclü kart içində fənn
+ * ikonu + nömrə, altında ad, kilidlidirsə kiçik qırmızı kilid nişanı ilə.
  * Ayrıca composable-a çıxarılıb ki, LazyVerticalGrid-in "items" bloku sadə qalsın.
  */
 @Composable
-private fun CategoryCard(number: Int, label: String, isLocked: Boolean, onClick: () -> Unit) {
+private fun CategoryCard(number: Int, label: String, isLocked: Boolean, accent: LessonAccent, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(vertical = 12.dp)
@@ -893,17 +925,30 @@ private fun CategoryCard(number: Int, label: String, isLocked: Boolean, onClick:
                 onClick = onClick,
                 modifier = Modifier.size(90.dp),
                 shape = RoundedCornerShape(16.dp),
-                // Kilidli kartların rəngi solğun (surfaceVariant), açıq kartlar isə canlı rəngdə
-                color = if (isLocked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
+                // Kilidli kartların rəngi solğun (surfaceVariant), açıq kartlar isə öz fənn rəngində
+                color = if (isLocked) MaterialTheme.colorScheme.surfaceVariant else accent.container,
                 tonalElevation = if (isLocked) 0.dp else 4.dp,
                 shadowElevation = if (isLocked) 0.dp else 4.dp
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    if (!isLocked) {
+                        Icon(
+                            imageVector = accent.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                            tint = accent.onContainer
+                        )
+                        Spacer(Modifier.height(2.dp))
+                    }
                     Text(
                         text = number.toString(),
-                        fontSize = 32.sp,
+                        fontSize = if (isLocked) 32.sp else 22.sp,
                         fontWeight = FontWeight.Black,
-                        color = if (isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer
+                        color = if (isLocked) MaterialTheme.colorScheme.onSurfaceVariant else accent.onContainer
                     )
                 }
             }
@@ -1692,12 +1737,13 @@ fun QuestionScreen(
                         Text("Sual $currentNum", fontSize = 28.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                         Text("Ümumi: $totalNum", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    // Vaxt qutusu: 30 saniyədən az qalanda rəngi qırmızıya (xəbərdarlıq rənginə)
-                    // dəyişir, 10 saniyədən az qalanda isə yuxarıdaki pulseScale sayəsində yüngülcə döyünür
+                    // Vaxt qutusu: dairəvi (pill) nişan, normalda isti "dərs" rənğində -
+                    // 30 saniyədən az qalanda qırmızıya (xəbərdarlıq rənginə) dəyişir,
+                    // 10 saniyədən az qalanda isə yuxarıdaki pulseScale sayəsində yüngülcə döyünür
                     Surface(
                         modifier = Modifier.scale(pulseScale),
-                        color = if (timeLeft < 30) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
-                        shape = RoundedCornerShape(12.dp)
+                        color = if (timeLeft < 30) MaterialTheme.colorScheme.errorContainer else LessonOrangeContainer,
+                        shape = RoundedCornerShape(percent = 50)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -1707,29 +1753,33 @@ fun QuestionScreen(
                                 Icons.Default.Timer,
                                 null,
                                 modifier = Modifier.size(20.dp),
-                                tint = if (timeLeft < 30) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+                                tint = if (timeLeft < 30) MaterialTheme.colorScheme.error else LessonOrange
                             )
                             Spacer(Modifier.width(8.dp))
                             // Saniyəni "dəqiqə:saniyə" formatına çeviririk (məs. 125 saniyə -> "02:05")
                             Text(
                                 text = String.format(Locale.getDefault(), "%02d:%02d", timeLeft / 60, timeLeft % 60),
                                 fontWeight = FontWeight.Black,
-                                color = if (timeLeft < 30) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+                                color = if (timeLeft < 30) MaterialTheme.colorScheme.error else LessonOrange
                             )
                         }
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                // Tərəqqi zolağı: neçənci sualda olduğumuzu vizual göstərir (məs. 5/25 -> 20% dolu)
-                LinearProgressIndicator(
-                    progress = { currentNum.toFloat() / totalNum },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(12.dp)
-                        .clip(CircleShape),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.primaryContainer
-                )
+                // Tərəqqi xətti əvəzinə ulduz-izi: 5 ulduzdan neçəsi dolu olduğu
+                // neçənci sualda olduğumuzu göstərir (məs. 5/25 sualda 1 ulduz dolu) -
+                // bu, sual sayından (25, 26...) asılı olmayaraq həmişə oxunaqlı qalır
+                val filledStars = (currentNum.toFloat() / totalNum * 5).roundToInt().coerceIn(1, 5)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    repeat(5) { i ->
+                        Icon(
+                            imageVector = if (i < filledStars) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = if (i < filledStars) LessonOrange else MaterialTheme.colorScheme.outlineVariant
+                        )
+                    }
+                }
             }
         }
     ) { padding ->
@@ -1741,37 +1791,48 @@ fun QuestionScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Sualın özü (və varsa şəkli) bir kart içində göstərilir
-            Card(
+            // Sualın özü (və varsa şəkli) bir kart içində göstərilir - sol kənarda
+            // rəngli zolaq "dəftər vərəqi" hissi verir (məktəb dərsliyi üslubu)
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 20.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // Şəkil yalnız varsa göstərilir (admin sual əlavə edərkən şəkil seçməyə bilər)
-                    if (question.imageUrl != null) {
-                        AsyncImage(
-                            model = question.imageUrl,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp)
-                                .clip(RoundedCornerShape(16.dp)),
-                            contentScale = ContentScale.Fit
-                        )
-                        Spacer(Modifier.height(24.dp))
-                    }
-
-                    Text(
-                        text = question.text,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 32.sp
+                Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+                    Box(
+                        modifier = Modifier
+                            .width(4.dp)
+                            .fillMaxHeight()
+                            .background(MaterialTheme.colorScheme.error)
                     )
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Şəkil yalnız varsa göstərilir (admin sual əlavə edərkən şəkil seçməyə bilər)
+                        if (question.imageUrl != null) {
+                            AsyncImage(
+                                model = question.imageUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp)
+                                    .clip(RoundedCornerShape(16.dp)),
+                                contentScale = ContentScale.Fit
+                            )
+                            Spacer(Modifier.height(24.dp))
+                        }
+
+                        Text(
+                            text = question.text,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 32.sp
+                        )
+                    }
                 }
             }
 
@@ -1816,7 +1877,9 @@ fun QuestionScreen(
                         },
                         enabled = selectedIndex == null,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        // Tam dairəvi (pill) forma - məktəb dərsliyi üslubuna uyğun, əvvəlki
+                        // künclü (12.dp) kartlardan daha "yumşaq/oyunlaşdırılmış" görünür
+                        shape = RoundedCornerShape(percent = 50),
                         color = containerColor,
                         border = androidx.compose.foundation.BorderStroke(2.dp, borderColor),
                         tonalElevation = 2.dp
@@ -1862,6 +1925,16 @@ fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> U
     val accentColor = if (isSuccess) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
     val accentContainer = if (isSuccess) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer
 
+    // Faizə görə 0-3 ulduz (məktəb dərsliyi üslubunda performans göstəricisi) -
+    // sadəcə keçdi/keçmədi deyil, nəticənin "nə qədər yaxşı" olduğunu da göstərir
+    val percentage = if (total > 0) score.toFloat() / total else 0f
+    val starCount = when {
+        percentage >= 0.9f -> 3
+        percentage >= 0.7f -> 2
+        percentage >= 0.5f -> 1
+        else -> 0
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1881,12 +1954,12 @@ fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> U
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
-                imageVector = if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
+                imageVector = if (isSuccess) Icons.Default.EmojiEvents else Icons.Default.Error,
                 contentDescription = null,
-                modifier = Modifier.size(120.dp),
+                modifier = Modifier.size(96.dp),
                 tint = accentColor
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
             Text(
                 text = if (isSuccess) "Təbriklər!" else "Yenidən Cəhd Et!",
                 fontSize = 36.sp,
@@ -1900,7 +1973,21 @@ fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> U
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(16.dp))
+
+            // Performans ulduzları: nəticənin faizinə görə 0-3 dolu ulduz
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(3) { i ->
+                    Icon(
+                        imageVector = if (i < starCount) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp),
+                        tint = if (i < starCount) LessonOrange else MaterialTheme.colorScheme.outlineVariant
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(32.dp))
 
             // Xal kartı: böyük rəqəmlə "5 / 25" formatında nəticə
             Card(
