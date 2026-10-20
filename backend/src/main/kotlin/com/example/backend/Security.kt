@@ -50,7 +50,7 @@ class SecurityConfig(private val props: AppProperties) {
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests {
                 it.requestMatchers(HttpMethod.POST, "/api/auth/check-phone", "/api/auth/register", "/api/auth/login", "/api/auth/admin").permitAll()
-                    .requestMatchers(HttpMethod.GET, "/api/health", "/api/categories", "/uploads/**").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/health", "/api/categories", "/uploads/**", "/admin", "/admin/**").permitAll()
                     .requestMatchers("/error").permitAll()
                     .requestMatchers("/api/admin/**").hasRole(Role.ADMIN.name)
                     .anyRequest().hasRole(Role.STUDENT.name)

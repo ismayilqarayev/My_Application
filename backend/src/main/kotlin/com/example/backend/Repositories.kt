@@ -114,6 +114,12 @@ class CategoryRepository(private val jdbc: JdbcClient) {
         ).param("name", name).query(mapper).single()
 
     fun delete(number: Int): Int = jdbc.sql("DELETE FROM categories WHERE number = :n").param("n", number).update()
+
+    fun rename(number: Int, name: String?): CategoryDto? =
+        jdbc.sql("UPDATE categories SET name = CAST(:name AS VARCHAR) WHERE number = :n RETURNING *")
+            .param("name", name)
+            .param("n", number)
+            .query(mapper).optional().orElse(null)
 }
 
 @Repository
@@ -147,6 +153,22 @@ class QuestionRepository(private val jdbc: JdbcClient) {
             .param("imageUrl", q.imageUrl)
             .query(mapper).single()
     }
+
+    fun update(id: Long, q: NewQuestion): QuestionDto? =
+        jdbc.sql(
+            """
+            UPDATE questions
+            SET text = :text, options = :options, correct_answer_index = :correct, image_url = :imageUrl
+            WHERE id = :id
+            RETURNING *
+            """
+        )
+            .param("id", id)
+            .param("text", q.text)
+            .param("options", q.options.toTypedArray())
+            .param("correct", q.correctAnswerIndex)
+            .param("imageUrl", q.imageUrl)
+            .query(mapper).optional().orElse(null)
 
     fun delete(id: Long): Int = jdbc.sql("DELETE FROM questions WHERE id = :id").param("id", id).update()
 }

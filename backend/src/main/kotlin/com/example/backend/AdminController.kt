@@ -3,8 +3,10 @@ package com.example.backend
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -34,10 +36,17 @@ class AdminController(
     fun questions(@PathVariable number: Int): List<QuestionDto> = questions.findByCategory(number)
 
     @PostMapping("/categories")
-    fun createCategory(@RequestBody req: NewCategoryRequest): CategoryDto {
-        val name = req.name?.trim()?.takeIf { it.isNotEmpty() }
+    fun createCategory(@RequestBody req: NewCategoryRequest): CategoryDto = categories.create(cleanName(req.name))
+
+    /** Boş ad göndərilərsə, sınaq yenidən "sınaq N" kimi göstərilir. */
+    @PatchMapping("/categories/{number}")
+    fun renameCategory(@PathVariable number: Int, @RequestBody req: NewCategoryRequest): CategoryDto =
+        categories.rename(number, cleanName(req.name)) ?: throw notFound("Sınaq tapılmadı.")
+
+    private fun cleanName(raw: String?): String? {
+        val name = raw?.trim()?.takeIf { it.isNotEmpty() }
         if (name != null && name.length > 100) throw badRequest("Sınağın adı çox uzundur.")
-        return categories.create(name)
+        return name
     }
 
     @DeleteMapping("/categories/{number}")
@@ -55,6 +64,10 @@ class AdminController(
         val cleaned = body.mapIndexed { i, q -> validate(q, i + 1) }
         return questions.insertAll(number, cleaned)
     }
+
+    @PutMapping("/questions/{id}")
+    fun updateQuestion(@PathVariable id: Long, @RequestBody body: NewQuestion): QuestionDto =
+        questions.update(id, validate(body, 1)) ?: throw notFound("Sual tapılmadı.")
 
     @DeleteMapping("/questions/{id}")
     fun deleteQuestion(@PathVariable id: Long): ResponseEntity<Unit> {

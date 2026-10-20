@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Müəllim paneli</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="admin.css">
+  <script src="admin.js" defer></script>
+</head>
+<body>
+
+<!-- Giriş -->
+<main id="login" class="login" hidden>
+  <form id="login-form" class="login-sheet" autocomplete="off">
+    <div class="login-mark" aria-hidden="true">
+      <span class="bubble">A</span><span class="bubble is-correct">B</span><span class="bubble">C</span><span class="bubble">D</span>
+    </div>
+    <h1>Müəllim paneli</h1>
+    <p class="muted">Sual bankını idarə etmək üçün admin parolunu daxil edin.</p>
+    <label class="field">
+      <span>Parol</span>
+      <input id="login-password" type="password" required autofocus>
+    </label>
+    <p id="login-error" class="form-error" role="alert"></p>
+    <button class="btn btn-primary btn-block" type="submit">Daxil ol</button>
+  </form>
+</main>
+
+<!-- Panel -->
+<div id="app" class="app" hidden>
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <strong>Müəllim paneli</strong>
+      <button id="logout" class="btn btn-quiet btn-small" type="button">Çıxış</button>
+    </div>
+
+    <nav aria-label="Bölmələr">
+      <h2 class="nav-title">Sınaqlar</h2>
+      <ul id="category-list" class="nav-list"></ul>
+      <button id="add-category" class="btn btn-quiet nav-add" type="button">+ Yeni sınaq</button>
+
+      <h2 class="nav-title">Şagirdlər</h2>
+      <ul class="nav-list">
+        <li><button class="nav-item" type="button" data-view="results">Nəticələr</button></li>
+        <li><button class="nav-item" type="button" data-view="accounts">Ödəniş və cihaz</button></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main class="content">
+
+    <!-- Sınağın sualları -->
+    <section id="view-category" class="view" hidden>
+      <header class="view-head">
+        <div>
+          <h1 id="category-title"></h1>
+          <p id="category-meta" class="muted"></p>
+        </div>
+        <div class="view-actions">
+          <button id="rename-category" class="btn btn-quiet" type="button">Adını dəyiş</button>
+          <button id="delete-category" class="btn btn-danger-quiet" type="button">Sınağı sil</button>
+        </div>
+      </header>
+
+      <div class="sheet editor">
+        <div class="segmented" role="tablist" aria-label="Sual əlavə etmə üsulu">
+          <button id="mode-single" role="tab" aria-selected="true" type="button">Tək sual</button>
+          <button id="mode-bulk" role="tab" aria-selected="false" type="button">Toplu yükləmə</button>
+        </div>
+
+        <!-- Tək sual -->
+        <form id="question-form" novalidate>
+          <p id="editing-note" class="editing-note" hidden>Sual №<span id="editing-number"></span> redaktə olunur</p>
+          <label class="field">
+            <span>Sualın mətni</span>
+            <textarea id="q-text" rows="3" required></textarea>
+          </label>
+
+          <fieldset class="options">
+            <legend>Variantlar <span class="muted">(düzgün cavabın hərfinə klikləyin)</span></legend>
+            <div id="option-rows"></div>
+            <button id="add-option" class="btn btn-quiet btn-small" type="button">+ Variant</button>
+          </fieldset>
+
+          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Şəkil əlavə et">
+            <input id="image-input" type="file" accept="image/*" hidden>
+            <div id="dropzone-empty">
+              <strong>Şəkil (istəyə bağlı)</strong>
+              <span class="muted">Klikləyin, faylı bura sürükləyin və ya Ctrl+V ilə yapışdırın</span>
+            </div>
+            <div id="dropzone-preview" class="dropzone-preview" hidden>
+              <img id="image-preview" alt="Sualın şəkli">
+              <button id="remove-image" class="btn btn-quiet btn-small" type="button">Şəkli sil</button>
+            </div>
+          </div>
+
+          <p id="question-error" class="form-error" role="alert"></p>
+          <div class="form-actions">
+            <button id="save-question" class="btn btn-primary" type="submit">Sualı əlavə et</button>
+            <button id="cancel-edit" class="btn btn-quiet" type="button" hidden>Redaktəni ləğv et</button>
+            <span class="hint muted">Ctrl+Enter ilə də yadda saxlaya bilərsiniz</span>
+          </div>
+        </form>
+
+        <!-- Toplu -->
+        <form id="bulk-form" hidden novalidate>
+          <p class="muted bulk-help">
+            Hər sualı boş sətirlə ayırın. Birinci sətir sualın mətnidir, qalan sətirlər variantlardır.
+            Düzgün variantın əvvəlinə <code>*</code> qoyun.
+          </p>
+          <label class="field">
+            <span>Suallar</span>
+            <textarea id="bulk-text" rows="12" spellcheck="false" placeholder="Azərbaycanın paytaxtı hansıdır?&#10;Gəncə&#10;*Bakı&#10;Şəki&#10;&#10;2 + 2 neçədir?&#10;3&#10;*4"></textarea>
+          </label>
+          <p id="bulk-error" class="form-error" role="alert"></p>
+          <div class="form-actions">
+            <button id="bulk-save" class="btn btn-primary" type="submit" disabled>Sualları yüklə</button>
+            <span id="bulk-count" class="muted"></span>
+          </div>
+        </form>
+      </div>
+
+      <ol id="question-list" class="sheet question-list"></ol>
+      <p id="question-empty" class="empty" hidden>Bu sınaqda hələ sual yoxdur. Yuxarıdakı formadan ilk sualı əlavə edin.</p>
+    </section>
+
+    <!-- Nəticələr -->
+    <section id="view-results" class="view" hidden>
+      <header class="view-head">
+        <div>
+          <h1>Nəticələr</h1>
+          <p class="muted">Şagirdlərin son 300 imtahan nəticəsi</p>
+        </div>
+        <div class="view-actions">
+          <input id="results-filter" class="search" type="search" placeholder="Ad və ya telefonla axtar" aria-label="Nəticələrdə axtar">
+          <button id="results-refresh" class="btn btn-quiet" type="button">Yenilə</button>
+        </div>
+      </header>
+      <div class="sheet table-wrap">
+        <table class="results">
+          <thead><tr><th>Şagird</th><th>Telefon</th><th>Sınaq</th><th class="num">Nəticə</th><th>Tarix</th></tr></thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+      <p id="results-empty" class="empty" hidden>Hələ heç bir şagird imtahan verməyib.</p>
+    </section>
+
+    <!-- Ödəniş və cihaz -->
+    <section id="view-accounts" class="view" hidden>
+      <header class="view-head">
+        <div>
+          <h1>Ödəniş və cihaz</h1>
+          <p class="muted">Ödəniş edən şagirdin sınaqlarını açın və ya hesabını yeni telefona keçirin</p>
+        </div>
+      </header>
+
+      <form id="unlock-form" class="sheet account-form" novalidate>
+        <h2>Ödənişli sınaqları aç</h2>
+        <p class="muted">Şagird kartınıza köçürmə edibsə, telefon nömrəsini yazın. 4-cü sınaqdan sonrakılar bu hesab üçün açılacaq.</p>
+        <div class="inline-field">
+          <input id="unlock-phone" type="tel" placeholder="050 123 45 67" aria-label="Telefon nömrəsi">
+          <button class="btn btn-primary" type="submit">Sınaqları aç</button>
+        </div>
+        <p class="form-result" role="status"></p>
+      </form>
+
+      <form id="reset-form" class="sheet account-form" novalidate>
+        <h2>Cihazı sıfırla</h2>
+        <p class="muted">Hər hesab ilk daxil olduğu telefona bağlanır. Şagird telefonunu dəyişibsə, nömrəsini yazın. Növbəti girişdə hesab yeni telefona bağlanacaq.</p>
+        <div class="inline-field">
+          <input id="reset-phone" type="tel" placeholder="050 123 45 67" aria-label="Telefon nömrəsi">
+          <button class="btn btn-primary" type="submit">Cihazı sıfırla</button>
+        </div>
+        <p class="form-result" role="status"></p>
+      </form>
+    </section>
+  </main>
+</div>
+
+<!-- Təsdiq / ad soruşma dialoqu -->
+<dialog id="dialog" class="dialog">
+  <form method="dialog" id="dialog-form">
+    <h2 id="dialog-title"></h2>
+    <p id="dialog-text" class="muted"></p>
+    <label id="dialog-field" class="field" hidden>
+      <span id="dialog-label"></span>
+      <input id="dialog-input" type="text" maxlength="100">
+    </label>
+    <div class="form-actions dialog-actions">
+      <button value="cancel" class="btn btn-quiet" type="submit">Ləğv et</button>
+      <button id="dialog-confirm" value="ok" class="btn btn-primary" type="submit"></button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
