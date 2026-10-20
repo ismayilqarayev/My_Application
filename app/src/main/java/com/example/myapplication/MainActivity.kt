@@ -84,7 +84,7 @@ import kotlin.time.Duration.Companion.milliseconds
 // ==========================================================================
 // BU FAYL TƏTBIQIN BÜTÜN EKRANLARINI (Compose UI) SAXLAYIR.
 // Burada YALNIZ görünüş var - hansı düymə hara basılır, nə rəngdədir və s.
-// Məntiq (Firebase, hesablama, taймer) TestViewModel.kt-dədir, bu fayl
+// Məntiq (server sorğuları, hesablama, taймer) TestViewModel.kt-dədir, bu fayl
 // yalnız oradakı state-ə "baxıb" ekranı çəkir.
 //
 // Compose necə işləyir (qısaca): hər "@Composable" funksiya bir ekran
@@ -123,7 +123,7 @@ class MainActivity : ComponentActivity() {
 fun TestApp(viewModel: TestViewModel = viewModel()) {
     // Ödəniş dialoqunun görünüb-görünməməsini idarə edən yerli (local) state.
     // Bu, ViewModel-də deyil, burada saxlanılır, çünki sadəcə "dialoq açıqdır/bağlıdır"
-    // sualının cavabıdır - Firebase-ə aid deyil.
+    // sualının cavabıdır - serverə aid deyil.
     var showPaymentDialog by remember { mutableStateOf(false) }
 
     // Hər ekran keçidində qısa (400ms) yüklənmə göstəricisi görünsün deyə.
@@ -180,9 +180,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                     onBack = { viewModel.screenState = ScreenState.RoleSelection }
                 )
                 ScreenState.CategorySelection -> CategorySelectionScreen(
-                    categoryCount = viewModel.categoryCount,
-                    deletedCategories = viewModel.deletedCategories,
-                    categoryNames = viewModel.categoryNames,
+                    categories = viewModel.categories,
                     isUnlocked = viewModel.isUnlocked,
                     onCategorySelected = viewModel::selectCategory,
                     onLockedClick = { showPaymentDialog = true },   // kilidli sınağa klik -> ödəniş dialoqu aç
@@ -212,9 +210,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                 )
                 ScreenState.Admin -> AdminScreen(
                     isLoading = viewModel.isLoadingQuestions,
-                    categoryCount = viewModel.categoryCount,
-                    deletedCategories = viewModel.deletedCategories,
-                    categoryNames = viewModel.categoryNames,
+                    categories = viewModel.categories,
                     categoryQuestions = viewModel.selectedCategoryQuestions,
                     onAddCategory = viewModel::addNewCategory,
                     onCategoryChange = viewModel::refreshSelectedCategoryQuestions,
@@ -226,9 +222,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                         viewModel.screenState =
                             if (viewModel.userInfo != null) ScreenState.CategorySelection
                             else ScreenState.RoleSelection
-                        // Şagird kimi giriş edilməyibsə, admin Firebase sessiyasını bağla
-                        // (bax: TestViewModel.signOutAdminIfNeeded qeydi)
-                        viewModel.signOutAdminIfNeeded()
+                        viewModel.adminLogout()
                     },
                     onUpload = viewModel::uploadQuestion,
                     onManualUnlock = viewModel::manualUnlock,
@@ -328,17 +322,14 @@ fun TransitionLoadingScreen() {
  * olunur ki, admin panelinə giriş sessiyanın vəziyyətindən asılı olmayaraq
  * həmişə mümkün olsun.
  *
- * "onVerify" - parolu TestViewModel.adminLogin() vasitəsilə Firebase Auth-a
- * göndərir (bax: TestViewModel-də ADMIN_EMAIL qeydi). Əvvəllər parol burada,
- * kodun İÇİNDƏ (BuildConfig.ADMIN_PASSWORD) müqayisə olunurdu - bu, Realtime
- * Database qaydaları üçün server tərəfində sübut edilə bilməyən, ona görə
- * TƏHLÜKƏSİZ olmayan bir yoxlama idi.
+ * "onVerify" - parolu TestViewModel.adminLogin() vasitəsilə serverə göndərir;
+ * parol yalnız serverdə (ADMIN_PASSWORD) yoxlanılır, tətbiqin içində saxlanılmır.
  */
 @Composable
 fun AdminLoginDialog(onDismiss: () -> Unit, onVerify: (String, (Boolean) -> Unit) -> Unit, onSuccess: () -> Unit) {
     var password by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }   // yanlış parol yazılıbsa true olur
-    var isChecking by remember { mutableStateOf(false) } // Firebase-dən cavab gözlənilərkən true
+    var isChecking by remember { mutableStateOf(false) } // serverdən cavab gözlənilərkən true
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -799,32 +790,27 @@ fun NameEntryScreen(isRegistering: Boolean, onRegister: (String, String, String)
 }
 
 /**
- * Kateqoriya (sınaq) seçimi ekranı: 1-dən "categoryCount"-a qədər sınaqları
- * 3-lük sıralarla göstərir. 4-cü sınaqdan yuxarı, ödəniş edilməyibsə, kilidli
- * olur. Sınaqların sayı sabit deyil - admin panelindən artırıla bilər (bax:
- * TestViewModel.addNewCategory).
+ * Kateqoriya (sınaq) seçimi ekranı: serverdəki sınaqları 3-lük sıralarla
+ * göstərir. 4-cü sınaqdan yuxarı, ödəniş edilməyibsə, kilidli olur. Sınaqların
+ * sayı sabit deyil - admin panelindən artırıla bilər (bax: TestViewModel.addNewCategory).
  *
  * DİQQƏT: Bu funksiya bilərəkdən TestViewModel-i BİRBAŞA qəbul ETMİR -
- * yalnız sadə parametrlər (Boolean, funksiyalar) alır. Bu, iki səbəbə görədir:
- *  1) Android Studio-nun preview (canlı önizləmə) paneli əsl Firebase-ə
- *     qoşula bilmir, ona görə TestViewModel-i birbaşa versək önizləmə xəta verir.
+ * yalnız sadə parametrlər (siyahı, Boolean, funksiyalar) alır. Bu, iki səbəbə görədir:
+ *  1) Android Studio-nun preview (canlı önizləmə) paneli serverə qoşula
+ *     bilmir, ona görə TestViewModel-i birbaşa versək önizləmə xəta verir.
  *  2) Composable-ı ViewModel-dən ayırmaq kodu daha təmiz və test edilə bilən edir.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategorySelectionScreen(
-    categoryCount: Int,
-    deletedCategories: Set<Int>,
-    categoryNames: Map<Int, String>,
+    categories: List<Category>,
     isUnlocked: Boolean,
-    onCategorySelected: (String) -> Unit,
+    onCategorySelected: (Int) -> Unit,
     onLockedClick: () -> Unit,
     onAdminVerify: (String, (Boolean) -> Unit) -> Unit,
     onAdminClick: () -> Unit,
     onBack: () -> Unit
 ) {
-    // Admin tərəfindən silinmiş sınaqlar (bax: TestViewModel.deleteCategory) siyahıda görünmür
-    val categories = (1..categoryCount).filter { it !in deletedCategories }.map { "sınaq $it" to "📝" }
     var showAdminLogin by remember { mutableStateOf(false) }
 
     // Telefonun fiziki/jest "geri" hərəkəti də rol seçiminə qaytarsın
@@ -887,10 +873,9 @@ fun CategorySelectionScreen(
             horizontalArrangement = Arrangement.Center,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            items(categories, key = { it.first }) { (name, _) ->
-                // "sınaq 7" -> 7 rəqəmini ayırırıq
-                val number = name.filter { it.isDigit() }.toIntOrNull() ?: 0
-                // Yalnız 1-3 üçün hazır sual dəsti var; 4-dən yuxarı yalnız ödənişdən sonra açılır
+            items(categories, key = { it.number }) { category ->
+                val number = category.number
+                // 1-3 pulsuzdur; 4-dən yuxarı yalnız ödənişdən sonra açılır (server də yoxlayır)
                 val isLocked = number >= 4 && !isUnlocked
                 // Hər açıq kartın öz fənn ikonu+rəngi olsun deyə (dövri) - "dərs rəfi"
                 // hissi versin, hamısı eyni görünən kvadrat olmasın
@@ -900,12 +885,12 @@ fun CategorySelectionScreen(
                     number = number,
                     // Admin bu sınağa xüsusi ad veribsə (məs. "Fizika") onu göstəririk,
                     // yoxdursa defolt "sınaq N" adı qalır
-                    label = categoryNames[number] ?: name,
+                    label = category.displayName,
                     isLocked = isLocked,
                     accent = accent,
                     onClick = {
                         // Kilidli deyilsə - normal seçim; kilidlidirsə - ödəniş dialoqunu aç
-                        if (!isLocked) onCategorySelected(name) else onLockedClick()
+                        if (!isLocked) onCategorySelected(number) else onLockedClick()
                     }
                 )
             }
@@ -1019,8 +1004,8 @@ private const val PAYMENT_AMOUNT_AZN = BuildConfig.PAYMENT_AMOUNT_AZN
  *     giriş zamanı təsdiqləndiyi üçün yenidən soruşulmur)
  *  2) İstifadəçi köçürməni öz bank tətbiqi ilə edir (bizim tətbiqin xaricində)
  *  3) Admin (Admin panelindən) köçürməni gördükdən sonra əl ilə həmin nömrəni açır
- *  4) Bu pəncərə açıq qaldığı müddətdə status CANLI dinlənilir (giriş zamanı
- *     artıq başladılıb) - açılan kimi avtomatik "Açıldı!" mesajına keçir
+ *  4) Bu pəncərə açıq qaldığı müddətdə status hər 15 saniyədən bir serverdən
+ *     yenilənir (bax: TestViewModel init) - açılan kimi "Açıldı!" mesajına keçir
  */
 @Composable
 fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
@@ -1064,10 +1049,8 @@ fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        // DİQQƏT: "phoneNumber" girişdən sonra artıq ölkə kodunu (994) ÖZÜNDƏ
-                        // saxlayır (bax: TestViewModel.loadUserOrAskName), ona görə burada
-                        // yenidən "994" yazmırıq - yalnız "+" əlavə edirik ki, ikiqat görünməsin
-                        text = "Köçürmə edərkən hesabınıza bağlı telefon nömrəsini (+${viewModel.phoneNumber}) admininə bildirin.",
+                        // "accountPhone" ölkə kodunu (994) artıq özündə saxlayır - yalnız "+" əlavə edirik
+                        text = "Köçürmə edərkən hesabınıza bağlı telefon nömrəsini (+${viewModel.accountPhone}) admininə bildirin.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1094,21 +1077,19 @@ fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
 @Composable
 fun AdminScreen(
     isLoading: Boolean,
-    categoryCount: Int,
-    deletedCategories: Set<Int>,
-    categoryNames: Map<Int, String>,
+    categories: List<Category>,
     categoryQuestions: List<Question>,
-    onAddCategory: (String) -> Unit,
-    onCategoryChange: (String) -> Unit,
-    onDeleteCategory: (String) -> Unit,
-    onDeleteQuestion: (String, Int) -> Unit,
+    onAddCategory: (String, (Int) -> Unit) -> Unit,
+    onCategoryChange: (Int) -> Unit,
+    onDeleteCategory: (Int) -> Unit,
+    onDeleteQuestion: (Int, Long) -> Unit,
     onBack: () -> Unit,
-    onUpload: (String, String, List<String>, Int, Uri?, () -> Unit) -> Unit,
-    onManualUnlock: (String) -> Unit,
-    onDeviceReset: (String) -> Unit,
-    onBulkUpload: (String, String, () -> Unit) -> Unit
+    onUpload: (Int, String, List<String>, Int, Uri?, () -> Unit) -> Unit,
+    onManualUnlock: (String, () -> Unit) -> Unit,
+    onDeviceReset: (String, () -> Unit) -> Unit,
+    onBulkUpload: (Int, String, () -> Unit) -> Unit
 ) {
-    var category by remember { mutableStateOf("sınaq 1") }   // hansı sınağa sual əlavə olunur
+    var category by remember { mutableIntStateOf(1) }   // hansı sınağa (nömrə) sual əlavə olunur
     var text by remember { mutableStateOf("") }                // sualın mətni
     var option1 by remember { mutableStateOf("") }
     var option2 by remember { mutableStateOf("") }
@@ -1136,9 +1117,8 @@ fun AdminScreen(
     val option4Focus = remember { FocusRequester() }
     val optionFocusRequesters = remember { listOf(option1Focus, option2Focus, option3Focus, option4Focus) }
 
-    // Seçilmiş kateqoriyanın nömrəsi + (varsa) admin tərəfindən verilmiş öz adı
-    val categoryNumber = category.filter { it.isDigit() }.toIntOrNull() ?: 0
-    val categoryDisplayName = categoryNames[categoryNumber] ?: category
+    // Seçilmiş sınağın (varsa) admin tərəfindən verilmiş öz adı
+    val categoryDisplayName = categories.find { it.number == category }?.displayName ?: "sınaq $category"
 
     // Telefonun fiziki/jest "geri" hərəkəti də əvvəlki ekrana qaytarsın
     BackHandler(onBack = onBack)
@@ -1168,9 +1148,8 @@ fun AdminScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val newCategoryNumber = (1..categoryCount).firstOrNull { it in deletedCategories } ?: (categoryCount + 1)
-                    onAddCategory(newCategoryName)
-                    category = "sınaq $newCategoryNumber"
+                    // Nömrəni server təyin edir - yaradılan kimi o sınağa keçirik
+                    onAddCategory(newCategoryName) { category = it }
                     showAddCategoryDialog = false
                 }) { Text("Əlavə et") }
             },
@@ -1204,13 +1183,11 @@ fun AdminScreen(
         if (!isLoading) onCategoryChange(category)
     }
 
-    // Seçili sınaq elə indicə silinibsə (məs. başqa admin ekranından), ilk
-    // mövcud sınağa keçirik ki, silinmiş bir kateqoriyaya sual yüklənməsin
-    LaunchedEffect(deletedCategories, categoryCount) {
-        val currentNumber = category.filter { it.isDigit() }.toIntOrNull()
-        if (currentNumber != null && currentNumber in deletedCategories) {
-            val firstAvailable = (1..categoryCount).firstOrNull { it !in deletedCategories }
-            if (firstAvailable != null) category = "sınaq $firstAvailable"
+    // Seçili sınaq mövcud deyilsə (silinib və ya siyahı yenicə yüklənib), ilk
+    // mövcud sınağa keçirik ki, olmayan bir sınağa sual yüklənməsin
+    LaunchedEffect(categories) {
+        if (categories.isNotEmpty() && categories.none { it.number == category }) {
+            category = categories.first().number
         }
     }
 
@@ -1252,12 +1229,11 @@ fun AdminScreen(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.Start
             ) {
-                (1..categoryCount).filter { it !in deletedCategories }.forEach { i ->
-                    val cat = "sınaq $i"
+                categories.forEach { cat ->
                     FilterChip(
-                        selected = category == cat,
-                        onClick = { category = cat },
-                        label = { Text(categoryNames[i] ?: cat) },
+                        selected = category == cat.number,
+                        onClick = { category = cat.number },
+                        label = { Text(cat.displayName) },
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
                 }
@@ -1529,9 +1505,9 @@ fun AdminScreen(
                         // Bir dəfəyə çoxlu sual əlavə etmək bölməsi: yuxarıda (çiplərdən)
                         // seçilmiş kateqoriyaya tətbiq olunur.
                         BulkUploadSection(
-                            category = category,
-                            onBulkUpload = { cat, rawText, clearForm ->
-                                onBulkUpload(cat, rawText) {
+                            categoryLabel = categoryDisplayName,
+                            onBulkUpload = { rawText, clearForm ->
+                                onBulkUpload(category, rawText) {
                                     clearForm()
                                     coroutineScope.launch { snackbarHostState.showSnackbar("Suallar əlavə edildi.") }
                                 }
@@ -1548,7 +1524,7 @@ fun AdminScreen(
                     ) {
                         // Ödənişi əl ilə açma bölməsi: şagird kart-karta köçürməni etdikdən
                         // sonra, admin bura həmin telefon nömrəsini yazıb "Aç" düyməsinə basır -
-                        // bank inteqrasiyası olmadan, birbaşa Firebase-ə yazılır (pulsuzdur).
+                        // bank inteqrasiyası olmadan, serverdə həmin nömrə açıq qeyd olunur.
                         ManualUnlockSection(onUnlock = onManualUnlock)
 
                         Spacer(Modifier.height(32.dp))
@@ -1574,7 +1550,7 @@ fun AdminScreen(
  * düzgün variantın əvvəlinə "*" qoyulur.
  */
 @Composable
-private fun BulkUploadSection(category: String, onBulkUpload: (String, String, () -> Unit) -> Unit) {
+private fun BulkUploadSection(categoryLabel: String, onBulkUpload: (String, () -> Unit) -> Unit) {
     var bulkText by remember { mutableStateOf("") }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1584,7 +1560,7 @@ private fun BulkUploadSection(category: String, onBulkUpload: (String, String, (
             fontWeight = FontWeight.Bold
         )
         Text(
-            "Hər sualı boş sətirlə ayırın. Sualın altındakı sətirlər variantlardır, düzgün olanın əvvəlinə \"*\" qoyun. Yuxarıda seçili kateqoriyaya (\"$category\") əlavə olunacaq.",
+            "Hər sualı boş sətirlə ayırın. Sualın altındakı sətirlər variantlardır, düzgün olanın əvvəlinə \"*\" qoyun. Yuxarıda seçili kateqoriyaya (\"$categoryLabel\") əlavə olunacaq.",
             modifier = Modifier.align(Alignment.Start),
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1617,7 +1593,7 @@ private fun BulkUploadSection(category: String, onBulkUpload: (String, String, (
         )
         Spacer(Modifier.height(12.dp))
         Button(
-            onClick = { onBulkUpload(category, bulkText) { bulkText = "" } },
+            onClick = { onBulkUpload(bulkText) { bulkText = "" } },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -1635,7 +1611,7 @@ private fun BulkUploadSection(category: String, onBulkUpload: (String, String, (
  * böyüməsin və bu hissə tək başına oxuna bilsin.
  */
 @Composable
-private fun ManualUnlockSection(onUnlock: (String) -> Unit) {
+private fun ManualUnlockSection(onUnlock: (String, () -> Unit) -> Unit) {
     var phone by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf<String?>(null) }   // "X açıldı" mesajı üçün
 
@@ -1670,8 +1646,9 @@ private fun ManualUnlockSection(onUnlock: (String) -> Unit) {
             Spacer(Modifier.width(8.dp))
             Button(
                 onClick = {
-                    onUnlock(phone)
-                    confirmation = phone
+                    val submitted = phone
+                    // Təsdiq mesajı yalnız server uğurla cavab verəndən sonra göstərilir
+                    onUnlock(submitted) { confirmation = submitted }
                 },
                 enabled = phone.isNotBlank(),
                 shape = RoundedCornerShape(12.dp)
@@ -1694,7 +1671,7 @@ private fun ManualUnlockSection(onUnlock: (String) -> Unit) {
  * şagirdin telefonu dəyişəndə admin bura nömrəni yazıb sıfırlayır.
  */
 @Composable
-private fun DeviceResetSection(onReset: (String) -> Unit) {
+private fun DeviceResetSection(onReset: (String, () -> Unit) -> Unit) {
     var phone by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf<String?>(null) }
 
@@ -1729,8 +1706,8 @@ private fun DeviceResetSection(onReset: (String) -> Unit) {
             Spacer(Modifier.width(8.dp))
             Button(
                 onClick = {
-                    onReset(phone)
-                    confirmation = phone
+                    val submitted = phone
+                    onReset(submitted) { confirmation = submitted }
                 },
                 enabled = phone.isNotBlank(),
                 shape = RoundedCornerShape(12.dp)
@@ -2172,7 +2149,7 @@ fun NameEntryPreview() {
 fun CategorySelectionPreview() {
     MyApplicationTheme {
         // "isUnlocked = false" - önizləmədə kilidlərin necə göründüyünü görmək üçün
-        CategorySelectionScreen(categoryCount = 25, deletedCategories = emptySet(), categoryNames = emptyMap(), isUnlocked = false, onCategorySelected = {}, onLockedClick = {}, onAdminVerify = { _, onResult -> onResult(false) }, onAdminClick = {}, onBack = {})
+        CategorySelectionScreen(categories = (1..25).map { Category(it) }, isUnlocked = false, onCategorySelected = {}, onLockedClick = {}, onAdminVerify = { _, onResult -> onResult(false) }, onAdminClick = {}, onBack = {})
     }
 }
 
@@ -2182,18 +2159,16 @@ fun AdminPreview() {
     MyApplicationTheme {
         AdminScreen(
             isLoading = false,
-            categoryCount = 25,
-            deletedCategories = emptySet(),
-            categoryNames = emptyMap(),
+            categories = (1..25).map { Category(it) },
             categoryQuestions = emptyList(),
-            onAddCategory = {},
+            onAddCategory = { _, _ -> },
             onCategoryChange = {},
             onDeleteCategory = {},
             onDeleteQuestion = { _, _ -> },
             onBack = {},
             onUpload = { _, _, _, _, _, _ -> },
-            onManualUnlock = {},
-            onDeviceReset = {},
+            onManualUnlock = { _, _ -> },
+            onDeviceReset = { _, _ -> },
             onBulkUpload = { _, _, _ -> }
         )
     }

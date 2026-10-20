@@ -1,37 +1,29 @@
 # MyApplication — İmtahan/Test Tətbiqi
 
-Kotlin və Jetpack Compose ilə yazılmış, Firebase backend-li Android imtahan/test tətbiqi. Şagirdlər telefon nömrəsi ilə qeydiyyatdan keçib sınaqlar (test) həll edir, müəllim isə admin panelindən sual bankını idarə edir.
+Kotlin və Jetpack Compose ilə yazılmış Android imtahan/test tətbiqi və onun öz serveri (Spring Boot + PostgreSQL). Şagirdlər telefon nömrəsi ilə qeydiyyatdan keçib sınaqlar (test) həll edir, müəllim isə admin panelindən sual bankını idarə edir.
 
 ## Xüsusiyyətlər
 
 ### Şagird tərəfi
 - **Giriş**: rol seçimi ("Şagird" / "Müəllim") ilə başlayır
 - **Qeydiyyat**: ilk dəfə telefon nömrəsi + ad-soyad + parol daxil edilir (SMS təsdiqi tələb olunmur)
-- **Sonrakı girişlər**: istənilən cihazdan sadəcə nömrə + parol ilə (Firebase Auth Email/Parol provayderi)
+- **Sonrakı girişlər**: nömrə + parol ilə. Hesab ilk daxil olduğu telefona bağlanır (paylaşılmasın deyə) — telefon dəyişəndə admin cihazı sıfırlayır
 - **Sınaqlar**: 1–3-cü sınaqlar pulsuz, 4-cü sınaqdan yuxarı ödənişlidir
   - Ödəniş: kart-karta köçürmə (məbləğ və kart nömrəsi `local.properties`-dən gəlir) + admin əl ilə açır
-  - Açılış statusu Firebase-dən canlı (real-time) izlənilir — ödəniş təsdiqlənən kimi tətbiq avtomatik açılır
-- **İmtahan zamanı**:
-  - Sual sayına mütənasib geri sayan taймer (hər sual üçün 12 saniyə)
-  - Cavab seçiləndə dərhal geribildirim: düzgün variant yaşıl ✓, seçilən səhv variant qırmızı ✗
-  - Qısa gecikmədən sonra avtomatik növbəti suala keçid
-  - Bütün ekranlarda geri qayıtma düyməsi
-- **Nəticə ekranı**: xal, uğur/uğursuzluq statusu
+  - Sınaqlar ekranı hər 15 saniyədən bir serverdən yenilənir — ödəniş təsdiqlənən kimi kilidlər götürülür
+  - Server ödənişli sınaqların suallarını açılmamış hesaba vermir
+- **İmtahan zamanı**: sual sayına mütənasib taймer (hər sual üçün 12 saniyə), dərhal düzgün/səhv geribildirimi, avtomatik növbəti suala keçid
+- **Nəticə ekranı**: xal, uğur/uğursuzluq statusu (nəticə serverdə saxlanılır)
 
 ### Müəllim (Admin) tərəfi
-- Gizli parolla qorunan giriş — parol Firebase Authentication-dakı sabit `admin@<layihə>.local` hesabına göndərilir (bax: [Admin hesabının qurulması](#admin-hesabının-qurulması))
-- **Sınaqların idarəsi**:
-  - Sınaqların sayı sabit deyil — "+ Yeni sınaq" düyməsi ilə istənilən qədər artırıla bilər
-  - Hər sınağın içindəki bütün sualların siyahısına baxmaq, elə oradan yeni sual əlavə etmək
-  - Tək-tək sual silmək və ya bütün sınağı (içindəki bütün suallarla) silmək (təsdiq dialoqu ilə)
-- **Sual əlavə etmə**:
-  - Tək-tək: mətn, 4 variant, düzgün cavab, istəyə bağlı şəkil (Firebase Storage-a yüklənir)
-  - Toplu (bulk): xüsusi mətn formatında bir neçə sualı eyni anda yükləmək
-- **Əl ilə açılış**: telefon nömrəsi yazıb şagirdin ödənişli sınaqlarını açmaq
+- Parolla qorunan giriş — parol yalnız serverdə (`ADMIN_PASSWORD`) yoxlanılır
+- **Sınaqların idarəsi**: yeni sınaq (istəyə bağlı adla), sınağın suallarına baxmaq, sual və ya bütün sınağı silmək
+- **Sual əlavə etmə**: tək-tək (mətn, 2–4 variant, düzgün cavab, istəyə bağlı şəkil) və ya toplu (bulk) mətn formatında
+- **Əl ilə açılış** və **cihaz sıfırlama**: telefon nömrəsi ilə
 
 ### Toplu sual yükləmə formatı
 
-Hər sual boş sətirlə ayrılır. Birinci sətir — sualın mətni, qalan sətirlər — variantlar, düzgün variantın əvvəlinə `*` qoyulur:
+Hər sual boş sətirlə ayrılır. Birinci sətir — sualın mətni, qalan sətirlər — variantlar (ən azı 2), düzgün variantın əvvəlinə `*` qoyulur:
 
 ```
 Azərbaycanın paytaxtı hansıdır?
@@ -39,86 +31,128 @@ Gəncə
 *Bakı
 Şəki
 Naxçıvan
-
-2+2 neçə edir?
-3
-*4
-5
-6
 ```
 
-## Texnologiyalar
+## Arxitektura
 
-- **Kotlin** + **Jetpack Compose** (Material3) — UI
-- **Firebase Realtime Database** — suallar, nəticələr, istifadəçi/ödəniş məlumatları
-- **Firebase Authentication** (Email/Parol provayderi) — hesab sistemi
-- **Firebase Storage** — sual şəkilləri
-- **Coil** — şəkil yükləmə
-- Gradle Kotlin DSL, version catalog (`libs.versions.toml`)
+```
+Android tətbiqi  ──HTTPS/JSON──>  Caddy (reverse proxy, avtomatik HTTPS)
+                                     │
+                                     ▼
+                                  Spring Boot API  ──>  PostgreSQL
+                                     │
+                                     └──>  /data/uploads (sual şəkilləri)
+```
 
-## Layihə strukturu
+Server tərəfi bütünlüklə `backend/docker-compose.yml` ilə bir əmrlə qalxır.
+
+### Layihə strukturu
 
 ```
 app/src/main/java/com/example/myapplication/
-├── MainActivity.kt        # Bütün Compose ekranları (UI)
-├── TestViewModel.kt        # Bütün biznes məntiqi + Firebase əməliyyatları
-├── Models.kt                # Question, UserInfo data class-ları
-└── ui/theme/                # Rəng palitri, tipoqrafiya (Birbank-dan ilhamlanıb)
+├── MainActivity.kt      # Bütün Compose ekranları (UI)
+├── TestViewModel.kt     # Biznes məntiqi + server sorğuları
+├── Api.kt               # Retrofit API interfeysi və HTTP client
+├── Models.kt            # Question, UserInfo, Category
+└── ui/theme/            # Rəng palitri, tipoqrafiya
+
+backend/
+├── src/main/kotlin/com/example/backend/
+│   ├── AuthController.kt    # qeydiyyat, giriş, admin girişi, /api/me
+│   ├── QuizController.kt    # sınaqlar, suallar, nəticələr (şagird)
+│   ├── AdminController.kt   # admin əməliyyatları, şəkil yükləmə
+│   ├── Repositories.kt      # SQL sorğuları (JdbcClient)
+│   └── Security.kt          # JWT, icazələr, giriş cəhdlərinin limiti
+├── src/main/resources/db/migration/  # Flyway — verilənlər bazası sxemi
+├── docker-compose.yml   # PostgreSQL + API + Caddy
+├── Caddyfile
+└── .env.example
 ```
 
-Arxitektura: sadə **MVVM** — `TestViewModel` bütün state və Firebase məntiqini saxlayır, `MainActivity.kt`-dəki Composable-lar isə yalnız sadə parametrlər (`Boolean`, `String`, funksiyalar) qəbul edir və Firebase-ə birbaşa toxunmur. Bu, Android Studio-nun `@Preview` panelinin Firebase-siz işləməsinə imkan verir.
+### Verilənlər bazası (PostgreSQL)
 
-## Firebase Realtime Database strukturu
+| Cədvəl | Məzmun |
+|---|---|
+| `users` | telefon, ad, soyad, parolun bcrypt hash-i, bağlı cihaz ID-si |
+| `purchases` | telefon → ödənişli sınaqlar açıqdırmı |
+| `categories` | sınağın nömrəsi (1–3 pulsuz) və istəyə bağlı adı |
+| `questions` | mətn, variantlar (`TEXT[]`), düzgün cavab, şəkil ünvanı |
+| `results` | şagird, sınaq, xal, ümumi sual sayı, tarix |
 
-```
-questions/
-  "sınaq 1"/
-    <sualId>/ { id, text, options: [...], correctAnswerIndex, imageUrl }
-  ...
-results/
-  <avtomatik-id>/ { firstName, lastName, score, total, timestamp }
-purchases/
-  <telefon>/ { unlocked, updatedAt }
-users/
-  <telefon>/ { firstName, lastName }
-meta/
-  categoryCount: <Int>              # cəmi sınaq sayı
-  deletedCategories/
-    <N>: true                        # silinmiş sınaq nömrələri
-```
+Sxem tətbiq ilk dəfə işə düşəndə Flyway tərəfindən avtomatik yaradılır (`V1__init.sql`), 25 boş sınaqla.
 
-## Quraşdırma
+### API
 
-1. **Firebase layihəsi**: [Firebase Console](https://console.firebase.google.com)-da yeni layihə yaradın (və ya mövcud olanı istifadə edin)
-   - Realtime Database yaradın, `database.rules.json` faylını deploy edin
-   - Storage aktivləşdirin, `storage.rules` faylını deploy edin
-   - Authentication → Sign-in method → **Email/Password** provayderini aktivləşdirin
-   - Android tətbiqi qeydiyyatdan keçirin, `google-services.json` faylını `app/` qovluğuna qoyun
-2. **Admin hesabını yaradın** — aşağıdakı [Admin hesabının qurulması](#admin-hesabının-qurulması) bölməsinə baxın
-3. **`local.properties`** faylını layihənin kök qovluğunda yaradın (nümunə üçün aşağıya baxın)
-4. **Release imza açarı** lazımdırsa (`./gradlew assembleRelease` üçün), `keytool` ilə `.jks` açarı yaradın və yolunu `local.properties`-də göstərin
-5. Build:
+| Metod | Ünvan | Kim |
+|---|---|---|
+| POST | `/api/auth/check-phone`, `/api/auth/register`, `/api/auth/login`, `/api/auth/admin` | hamı |
+| GET | `/api/categories` | hamı |
+| GET | `/api/me`, `/api/categories/{n}/questions` · POST `/api/results` | şagird |
+| GET/POST/DELETE | `/api/admin/...` (sınaqlar, suallar, şəkillər, açılış, cihaz sıfırlama) | admin |
+
+Giriş JWT token ilə işləyir (`Authorization: Bearer ...`). Şagird token-i 180 gün, admin token-i 12 saat etibarlıdır.
+
+## Serverə yerləşdirmə (Contabo VPS)
+
+1. **VPS**: Contabo-da Ubuntu 24.04 ilə ən kiçik Cloud VPS kifayətdir. SSH ilə daxil olun.
+2. **Docker quraşdırın**:
    ```bash
-   ./gradlew assembleDebug     # test üçün
-   ./gradlew assembleRelease   # paylaşım üçün (imzalanmış)
+   curl -fsSL https://get.docker.com | sh
    ```
+3. **Firewall** (yalnız SSH, HTTP, HTTPS açıq qalsın):
+   ```bash
+   ufw allow OpenSSH && ufw allow 80 && ufw allow 443 && ufw enable
+   ```
+4. **Layihəni gətirin və konfiqurasiya edin**:
+   ```bash
+   git clone <repo-url> && cd My_Application/backend
+   cp .env.example .env
+   nano .env   # parolları və JWT_SECRET-i dəyişin (openssl rand -base64 48)
+   ```
+5. **İşə salın**:
+   ```bash
+   docker compose up -d --build
+   ```
+   Yoxlama: `curl http://<SERVER_IP>/api/health` → `{"status":"ok"}`
+6. **Tətbiqi serverə yönəldin** — `local.properties`-də:
+   ```properties
+   API_BASE_URL=http://<SERVER_IP>/
+   ```
+   Domen olmadan (HTTP) yalnız **debug** build işləyir — Android release build-də şifrəsiz HTTP-ni bloklayır.
 
-### Admin hesabının qurulması
+### Domen alandan sonra (HTTPS)
 
-Admin paneli artıq kodun içində saxlanılan bir parolla deyil, Firebase Authentication-dakı **sabit bir hesabla** qorunur — bu sayədə Realtime Database/Storage qaydaları "bu, əsl admindir" faktını server tərəfində yoxlaya bilir (kodun içindəki müqayisəni "inandığımız" köhnə üsuldan fərqli olaraq).
+1. Domenin DNS-ində `A` qeydi yaradın: `api.saytim.az → <SERVER_IP>`
+2. `backend/.env`-də: `SITE_ADDRESS=api.saytim.az`
+3. `docker compose up -d` — Caddy Let's Encrypt sertifikatını avtomatik alır və yeniləyir
+4. `local.properties`-də: `API_BASE_URL=https://api.saytim.az/` və release APK yığın
 
-Bir dəfəlik, əl ilə edilməli addım:
+### Yeniləmə və ehtiyat nüsxə
 
-1. Firebase Console → **Authentication** → **Users** → **Add user**
-2. Email: `admin@myapplication-223cacbf.local` (layihənin adı fərqlidirsə, `TestViewModel.kt`-dəki `ADMIN_EMAIL` sabitini və `database.rules.json`/`storage.rules`-dəki eyni email dəyərini uyğun dəyişin)
-3. Password: seçdiyiniz admin parolu — tətbiqdəki "Müəllim" girişində məhz bu parol istifadə olunacaq
+```bash
+git pull && docker compose up -d --build          # yeni versiyanı yerləşdirmək
+docker compose exec db pg_dump -U imtahan imtahan > backup-$(date +%F).sql   # bazanın nüsxəsi
+docker compose logs -f api                         # server logları
+```
 
-Parolu dəyişmək istəsəniz, sadəcə Firebase Console-dan həmin istifadəçinin parolunu yeniləyin.
+Sual şəkilləri `uploads` Docker volume-undadır; onu da ehtiyat nüsxəyə daxil edin.
+
+## Lokal inkişaf
+
+- **Backend**: `cd backend && docker compose --env-file .env up -d --build` (və ya PostgreSQL-i ayrıca qaldırıb `./gradlew bootRun`). Lokalda Caddy 80-ci portda dinləyir.
+- **Android emulyatoru**: `API_BASE_URL` təyin edilməyibsə, defolt `http://10.0.2.2:8080/` istifadə olunur (emulyatordan kompüterdəki `bootRun`-a). Docker Compose ilə işlədirsinizsə: `API_BASE_URL=http://10.0.2.2/`.
+- Build:
+  ```bash
+  ./gradlew assembleDebug     # test üçün
+  ./gradlew assembleRelease   # paylaşım üçün (imzalanmış, HTTPS domen tələb edir)
+  ```
 
 ### `local.properties` nümunəsi
 
 ```properties
 sdk.dir=/path/to/android/sdk
+
+API_BASE_URL=http://10.0.2.2/
 
 # Kart-karta köçürmə məlumatları
 PAYMENT_CARD_NUMBER=0000 0000 0000 0000
@@ -131,19 +165,18 @@ RELEASE_KEY_ALIAS=...
 RELEASE_KEY_PASSWORD=...
 ```
 
-Bu fayl `.gitignore`-dadır — heç vaxt commit edilmir.
+Bu fayl və `backend/.env` `.gitignore`-dadır — heç vaxt commit edilmir.
 
 ## Təhlükəsizlik qeydləri
 
-- Parollar heç vaxt açıq mətn kimi saxlanılmır — Firebase Authentication-un öz (hash-lənmiş) mexanizmi istifadə olunur. Telefon nömrəsindən sintetik email düzəldilir (`<nömrə>@<layihə>.local`) və bu, Email/Parol provayderinin "istifadəçi adı" kimi işlədilir.
-- Admin girişi də eyni prinsiplə işləyir: sabit `admin@<layihə>.local` hesabı ilə (bax: [Admin hesabının qurulması](#admin-hesabının-qurulması)). `database.rules.json` və `storage.rules` yalnız bu hesabla autentifikasiya olunmuş sessiyalara `questions`/`purchases`/`meta` yazma icazəsi verir — başqa heç bir istifadəçi (özü daxil olmaqla) bu düyünləri dəyişə bilməz.
-- `results` (imtahan nəticələri) yalnız admin tərəfindən oxuna bilər; hər istifadəçi öz nəticəsini bir dəfə yaza bilər, mövcud nəticəni dəyişə bilməz.
-- `questions` düyünündə yalnız admin mövcud sualları dəyişə/silə bilər — adi istifadəçilər YALNIZ hələ mövcud olmayan (boş kateqoriyalar üçün "hazır" sualların avtomatik yaradılması məqsədilə) sual yarada bilir, üzərinə yaza bilmir.
-- `users/<telefon>` düyünü hələ də ictimai OXUNA bilir (ad-soyad) — bu, giriş zamanı "bu nömrə qeydiyyatlıdırmı?" yoxlamasının hələ Firebase Auth sessiyası başlamazdan ƏVVƏL baş verməsi ilə bağlı bir güzəştdir. YAZMA isə yalnız hesabın sahibinə və admin-ə icazəlidir.
-- Ödəniş kartı məlumatları `local.properties` vasitəsilə `BuildConfig`-ə keçirilir — mənbə kodunda (və GitHub-da) görünmür.
-- `database.rules.json`/`storage.rules`-də dəyişiklik etdikdən sonra onları Firebase Console-dan (və ya `firebase deploy --only database,storage`) yenidən deploy etməyi unutmayın — yerli fayldakı dəyişiklik avtomatik tətbiq olunmur.
+- Parollar serverdə yalnız bcrypt hash şəklində saxlanılır.
+- Giriş cəhdləri limitlidir: eyni IP-dən və ya eyni hesaba 15 dəqiqədə 10 uğursuz cəhddən sonra müvəqqəti bloklanır.
+- Cihaz bağlaması server tərəfində yoxlanılır; admin cihazı sıfırlayanda köhnə telefondakı sessiya da etibarsız olur.
+- Ödənişli sınaqların sualları server tərəfində qorunur — tətbiqi dəyişdirməklə açmaq olmur.
+- PostgreSQL portu xaricə açılmır, yalnız API konteyneri ona qoşulur.
+- Sual şəkilləri təsadüfi (UUID) adlarla `/uploads/...` ünvanında ictimai paylanır.
 
 ## Bilinən məhdudiyyətlər
 
-- Ödəniş prosesi tam avtomatlaşdırılmayıb — admin köçürməni əl ilə yoxlayıb "aç" düyməsinə basmalıdır (bank API inteqrasiyası yoxdur, sadə və pulsuz saxlamaq üçün qəsdən belədir)
-- Müəllim panelində şagird nəticələrinə baxmaq üçün ayrıca ekran hələ yoxdur (nəticələr Firebase-də saxlanılır, amma admin UI-də göstərilmir)
+- Ödəniş prosesi tam avtomatlaşdırılmayıb — admin köçürməni əl ilə yoxlayıb "aç" düyməsinə basmalıdır
+- Müəllim panelində şagird nəticələrinə baxmaq üçün ayrıca ekran hələ yoxdur (nəticələr `results` cədvəlində saxlanılır)

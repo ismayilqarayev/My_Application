@@ -1,0 +1,23 @@
+server:
+  port: 8080
+  # Caddy (reverse proxy) X-Forwarded-For başlığını göndərir - real müştəri IP-si
+  # giriş cəhdlərinin limitləndirilməsi üçün lazımdır
+  forward-headers-strategy: native
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/imtahan}
+    username: ${DB_USER:imtahan}
+    password: ${DB_PASSWORD:imtahan}
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+app:
+  # JWT imzalamaq üçün gizli açar - ən azı 32 simvol. Serverdə MÜTLƏQ dəyişdirin.
+  jwt-secret: ${JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
+  token-validity-days: 180
+  # Müəllim (admin) panelinin parolu. Boşdursa admin girişi tamamilə bağlıdır.
+  admin-password: ${ADMIN_PASSWORD:}
+  upload-dir: ${UPLOAD_DIR:./uploads}

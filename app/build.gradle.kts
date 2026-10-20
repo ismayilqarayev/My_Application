@@ -4,7 +4,6 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.google.services)
 }
 
 val localProperties = Properties().apply {
@@ -34,6 +33,13 @@ android {
             "String",
             "PAYMENT_AMOUNT_AZN",
             "\"${localProperties.getProperty("PAYMENT_AMOUNT_AZN", "5")}\""
+        )
+        // Backend serverinin ünvanı. Defolt: emulyatordan kompüterdəki lokal servere
+        // (10.0.2.2 = emulyatorun "host" kompüteri). Serverdə: http://<IP>/ və ya https://<domen>/
+        buildConfigField(
+            "String",
+            "API_BASE_URL",
+            "\"${localProperties.getProperty("API_BASE_URL", "http://10.0.2.2:8080/")}\""
         )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -76,14 +82,12 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.compose.material.icons.extended)
 
-    // Firebase Online Database
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
-    implementation("com.google.firebase:firebase-database-ktx")
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx")
+    // Backend (Spring Boot) API ilə əlaqə
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
 
     // Coil for Image Loading
-    implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation(libs.coil.compose)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
