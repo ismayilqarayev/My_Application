@@ -36,6 +36,17 @@ data class ResultRequest(val categoryNumber: Int, val score: Int, val total: Int
 data class NewCategoryRequest(val name: String?)
 data class NewQuestion(val text: String, val options: List<String>, val correctAnswerIndex: Int, val imageUrl: String? = null)
 data class ImageResponse(val url: String)
+data class ResultEntry(
+    val id: Long,
+    val firstName: String,
+    val lastName: String,
+    val phone: String,
+    val categoryNumber: Int,
+    val categoryName: String?,
+    val score: Int,
+    val total: Int,
+    val createdAt: Long
+)
 private data class ErrorResponse(val message: String?)
 
 interface ApiService {
@@ -89,6 +100,9 @@ interface ApiService {
 
     @POST("api/admin/reset-device")
     suspend fun resetDevice(@Body body: PhoneRequest)
+
+    @GET("api/admin/results")
+    suspend fun adminResults(): List<ResultEntry>
 }
 
 /**

@@ -20,6 +20,7 @@ Kotlin və Jetpack Compose ilə yazılmış Android imtahan/test tətbiqi və on
 - **Sınaqların idarəsi**: yeni sınaq (istəyə bağlı adla), sınağın suallarına baxmaq, sual və ya bütün sınağı silmək
 - **Sual əlavə etmə**: tək-tək (mətn, 2–4 variant, düzgün cavab, istəyə bağlı şəkil) və ya toplu (bulk) mətn formatında
 - **Əl ilə açılış** və **cihaz sıfırlama**: telefon nömrəsi ilə
+- **Nəticələr**: şagirdlərin son imtahan nəticələri (ad, telefon, sınaq, xal, tarix)
 
 ### Toplu sual yükləmə formatı
 
@@ -179,4 +180,4 @@ Bu fayl və `backend/.env` `.gitignore`-dadır — heç vaxt commit edilmir.
 ## Bilinən məhdudiyyətlər
 
 - Ödəniş prosesi tam avtomatlaşdırılmayıb — admin köçürməni əl ilə yoxlayıb "aç" düyməsinə basmalıdır
-- Müəllim panelində şagird nəticələrinə baxmaq üçün ayrıca ekran hələ yoxdur (nəticələr `results` cədvəlində saxlanılır)
+- Admin panelinin "Nəticələr" tab-ı yalnız son 300 nəticəni göstərir (hamısı `results` cədvəlində saxlanılır)

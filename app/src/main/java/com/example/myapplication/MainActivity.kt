@@ -21,6 +21,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -77,6 +79,8 @@ import com.example.myapplication.ui.theme.LessonTeal
 import com.example.myapplication.ui.theme.LessonTealContainer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
@@ -227,7 +231,10 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                     onUpload = viewModel::uploadQuestion,
                     onManualUnlock = viewModel::manualUnlock,
                     onDeviceReset = viewModel::resetDevice,
-                    onBulkUpload = viewModel::uploadQuestionsBulk
+                    onBulkUpload = viewModel::uploadQuestionsBulk,
+                    results = viewModel.adminResults,
+                    isLoadingResults = viewModel.isLoadingResults,
+                    onRefreshResults = viewModel::refreshAdminResults
                 )
                 ScreenState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
             }
@@ -1087,7 +1094,10 @@ fun AdminScreen(
     onUpload: (Int, String, List<String>, Int, Uri?, () -> Unit) -> Unit,
     onManualUnlock: (String, () -> Unit) -> Unit,
     onDeviceReset: (String, () -> Unit) -> Unit,
-    onBulkUpload: (Int, String, () -> Unit) -> Unit
+    onBulkUpload: (Int, String, () -> Unit) -> Unit,
+    results: List<ResultEntry>,
+    isLoadingResults: Boolean,
+    onRefreshResults: () -> Unit
 ) {
     var category by remember { mutableIntStateOf(1) }   // hansı sınağa (nömrə) sual əlavə olunur
     var text by remember { mutableStateOf("") }                // sualın mətni
@@ -1201,7 +1211,12 @@ fun AdminScreen(
     // İndi "TabRow" ilə 3 ayrı bölməyə bölünüb ki, admin axtardığını tez tapsın,
     // hər dəfə lazım olmayan hissələri scroll edib keçməyə məcbur olmasın.
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabTitles = listOf("Suallar", "Toplu yüklə", "Ödəniş və cihaz")
+    val tabTitles = listOf("Suallar", "Toplu yüklə", "Ödəniş və cihaz", "Nəticələr")
+
+    // "Nəticələr" tab-ı hər açılanda serverdən təzə siyahı gətirilir
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == RESULTS_TAB) onRefreshResults()
+    }
 
     Scaffold(
         topBar = {
@@ -1516,7 +1531,7 @@ fun AdminScreen(
                         Spacer(Modifier.height(24.dp))
                     }
 
-                    else -> Column(
+                    2 -> Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
@@ -1538,6 +1553,8 @@ fun AdminScreen(
                         DeviceResetSection(onReset = onDeviceReset)
                         Spacer(Modifier.height(24.dp))
                     }
+
+                    else -> ResultsSection(results = results, isLoading = isLoadingResults, onRefresh = onRefreshResults)
                 }
             }
         }
@@ -1661,6 +1678,83 @@ private fun ManualUnlockSection(onUnlock: (String, () -> Unit) -> Unit) {
                 color = MaterialTheme.colorScheme.secondary,
                 fontSize = 13.sp
             )
+        }
+    }
+}
+
+private const val RESULTS_TAB = 3
+
+private val resultDateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
+
+/** Admin panelinin "Nəticələr" tab-ı: şagirdlərin son imtahan nəticələri, yenidən köhnəyə. */
+@Composable
+private fun ResultsSection(results: List<ResultEntry>, isLoading: Boolean, onRefresh: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 8.dp, top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Son nəticələr (${results.size})",
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            } else {
+                IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, contentDescription = "Yenilə") }
+            }
+        }
+
+        if (results.isEmpty() && !isLoading) {
+            Text(
+                "Hələ heç bir şagird imtahan verməyib.",
+                modifier = Modifier.padding(16.dp),
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(results, key = { it.id }) { result ->
+                val passed = result.total > 0 && result.score * 2 >= result.total
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("${result.firstName} ${result.lastName}", fontWeight = FontWeight.Bold)
+                            Text(
+                                "+${result.phone} · ${result.categoryName ?: "sınaq ${result.categoryNumber}"}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                resultDateFormat.format(Date(result.createdAt)),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            "${result.score} / ${result.total}",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (passed) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -1998,7 +2092,8 @@ fun QuestionScreen(
  */
 @Composable
 fun ResultScreen(userInfo: UserInfo?, score: Int, total: Int, onRestart: () -> Unit) {
-    val isSuccess = score >= total / 2
+    // "total / 2" tam ədəd bölməsidir (1 / 2 = 0) - 0/1 nəticəni uğur sayırdı
+    val isSuccess = total > 0 && score * 2 >= total
     val accentColor = if (isSuccess) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
     val accentContainer = if (isSuccess) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer
 
@@ -2169,7 +2264,10 @@ fun AdminPreview() {
             onUpload = { _, _, _, _, _, _ -> },
             onManualUnlock = { _, _ -> },
             onDeviceReset = { _, _ -> },
-            onBulkUpload = { _, _, _ -> }
+            onBulkUpload = { _, _, _ -> },
+            results = emptyList(),
+            isLoadingResults = false,
+            onRefreshResults = {}
         )
     }
 }

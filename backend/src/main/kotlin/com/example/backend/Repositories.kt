@@ -151,8 +151,46 @@ class QuestionRepository(private val jdbc: JdbcClient) {
     fun delete(id: Long): Int = jdbc.sql("DELETE FROM questions WHERE id = :id").param("id", id).update()
 }
 
+data class ResultDto(
+    val id: Long,
+    val firstName: String,
+    val lastName: String,
+    val phone: String,
+    val categoryNumber: Int,
+    val categoryName: String?,
+    val score: Int,
+    val total: Int,
+    val createdAt: Long   // epoch millisaniyə
+)
+
 @Repository
 class ResultRepository(private val jdbc: JdbcClient) {
+    /** Ən son nəticələr, yenidən köhnəyə. */
+    fun findRecent(limit: Int): List<ResultDto> =
+        jdbc.sql(
+            """
+            SELECT r.id, u.first_name, u.last_name, u.phone, r.category_number, c.name AS category_name,
+                   r.score, r.total, r.created_at
+            FROM results r
+            JOIN users u ON u.id = r.user_id
+            LEFT JOIN categories c ON c.number = r.category_number
+            ORDER BY r.created_at DESC
+            LIMIT :limit
+            """
+        ).param("limit", limit).query { rs, _ ->
+            ResultDto(
+                id = rs.getLong("id"),
+                firstName = rs.getString("first_name"),
+                lastName = rs.getString("last_name"),
+                phone = rs.getString("phone"),
+                categoryNumber = rs.getInt("category_number"),
+                categoryName = rs.getString("category_name"),
+                score = rs.getInt("score"),
+                total = rs.getInt("total"),
+                createdAt = rs.getTimestamp("created_at").time
+            )
+        }.list()
+
     fun insert(userId: Long, categoryNumber: Int, score: Int, total: Int) {
         jdbc.sql("INSERT INTO results (user_id, category_number, score, total) VALUES (:u, :c, :s, :t)")
             .param("u", userId)

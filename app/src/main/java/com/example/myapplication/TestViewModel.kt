@@ -323,6 +323,21 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
     fun adminLogout() {
         adminToken = null
         _selectedCategoryQuestions.clear()
+        adminResults = emptyList()
+    }
+
+    /** Admin panelinin "Nəticələr" tab-ı üçün şagirdlərin son imtahan nəticələri. */
+    var adminResults by mutableStateOf<List<ResultEntry>>(emptyList())
+        private set
+    var isLoadingResults by mutableStateOf(false)
+        private set
+
+    fun refreshAdminResults() {
+        isLoadingResults = true
+        viewModelScope.launch {
+            apiCall("Nəticələr yüklənə bilmədi.") { api.service.adminResults() }?.let { adminResults = it }
+            isLoadingResults = false
+        }
     }
 
     fun refreshSelectedCategoryQuestions(categoryNumber: Int) {

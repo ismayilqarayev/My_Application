@@ -23,8 +23,12 @@ class AdminController(
     private val questions: QuestionRepository,
     private val purchases: PurchaseRepository,
     private val users: UserRepository,
+    private val results: ResultRepository,
     private val props: AppProperties
 ) {
+
+    @GetMapping("/results")
+    fun results(): List<ResultDto> = results.findRecent(RESULTS_LIMIT)
 
     @GetMapping("/categories/{number}/questions")
     fun questions(@PathVariable number: Int): List<QuestionDto> = questions.findByCategory(number)
@@ -94,6 +98,7 @@ class AdminController(
     }
 
     private companion object {
+        const val RESULTS_LIMIT = 300
         val ALLOWED_IMAGE_TYPES = mapOf(
             "image/jpeg" to "jpg",
             "image/png" to "png",
