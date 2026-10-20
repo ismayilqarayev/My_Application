@@ -16,11 +16,23 @@ Kotlin və Jetpack Compose ilə yazılmış Android imtahan/test tətbiqi və on
 - **Nəticə ekranı**: xal, uğur/uğursuzluq statusu (nəticə serverdə saxlanılır)
 
 ### Müəllim (Admin) tərəfi
-- Parolla qorunan giriş — parol yalnız serverdə (`ADMIN_PASSWORD`) yoxlanılır
+- İki yerdən idarə olunur: tətbiqdəki "Müəllim" bölməsi və kompüter üçün **brauzer paneli** (`/admin`)
+- Parolla qorunan giriş — parol yalnız serverdə (`.env`-dəki `IMTAHAN_ADMIN_PASSWORD`) yoxlanılır
 - **Sınaqların idarəsi**: yeni sınaq (istəyə bağlı adla), sınağın suallarına baxmaq, sual və ya bütün sınağı silmək
 - **Sual əlavə etmə**: tək-tək (mətn, 2–4 variant, düzgün cavab, istəyə bağlı şəkil) və ya toplu (bulk) mətn formatında
 - **Əl ilə açılış** və **cihaz sıfırlama**: telefon nömrəsi ilə
 - **Nəticələr**: şagirdlərin son imtahan nəticələri (ad, telefon, sınaq, xal, tarix)
+
+### Brauzer paneli (`/admin`)
+
+Kompüterdə sual bankı ilə rahat işləmək üçün. Server işləyən istənilən yerdə açılır:
+lokal kompüterdə `http://localhost/admin`, serverdə `http://<SERVER_IP>/admin` (domen alınandan sonra `https://<domen>/admin`).
+
+- Sualları əlavə etmək, **redaktə etmək** və silmək; sınağın adını dəyişmək
+- `Ctrl+Enter` ilə saxlamaq, variantlar arasında `Enter` ilə keçmək
+- Şəkli seçmək, sürükləyib atmaq və ya `Ctrl+V` ilə (məs. ekran görüntüsü) yapışdırmaq — böyük şəkillər avtomatik 1600px-ə kiçildilir
+- Toplu yükləmə: yazdıqca neçə sualın hazır olduğunu göstərir
+- Nəticələr (ad/telefonla axtarış), ödəniş açılışı və cihaz sıfırlama
 
 ### Toplu sual yükləmə formatı
 
@@ -65,6 +77,7 @@ backend/
 │   ├── Repositories.kt      # SQL sorğuları (JdbcClient)
 │   └── Security.kt          # JWT, icazələr, giriş cəhdlərinin limiti
 ├── src/main/resources/db/migration/  # Flyway — verilənlər bazası sxemi
+├── src/main/resources/static/admin/  # brauzer admin paneli (HTML/CSS/JS)
 ├── docker-compose.yml   # PostgreSQL + API + Caddy
 ├── Caddyfile
 └── .env.example
@@ -137,6 +150,38 @@ docker compose logs -f api                         # server logları
 ```
 
 Sual şəkilləri `uploads` Docker volume-undadır; onu da ehtiyat nüsxəyə daxil edin.
+
+## Server alınmamışdan əvvəl: kompüterdə işlətmək
+
+Sualları indidən kompüterinizdə daxil edib, sonra hamısını serverə köçürə bilərsiniz.
+
+1. **Docker Desktop**-u açın.
+2. `backend/.env` faylı yaradın (`.env.example`-dən) və parolları təyin edin.
+3. İşə salın:
+   ```bash
+   cd backend
+   docker compose up -d --build
+   ```
+4. Brauzerdə `http://localhost/admin` açın, `IMTAHAN_ADMIN_PASSWORD` parolu ilə daxil olun.
+
+Kompüter yenidən başladıqdan sonra Docker Desktop-u açmaq kifayətdir — konteynerlər özləri qalxır.
+
+### Kompüterdəki sualları serverə köçürmək
+
+Server hazır olanda, kompüterdə **PowerShell**-də (Git Bash-da yox — o, `/tmp/...` yollarını Windows yoluna çevirib əmri pozur):
+```bash
+cd backend
+docker compose exec db pg_dump -U imtahan --data-only --exclude-table=flyway_schema_history -f /tmp/data.sql imtahan
+docker compose cp db:/tmp/data.sql ./data.sql
+docker compose cp api:/data/uploads ./uploads-backup
+```
+`data.sql` faylını və `uploads-backup` qovluğunu serverdəki `backend` qovluğuna köçürün (məs. `scp`). Sonra serverdə, backend ilk dəfə işə düşüb cədvəlləri yaradandan sonra:
+```bash
+docker compose cp ./data.sql db:/tmp/data.sql
+docker compose exec db psql -U imtahan imtahan -c "TRUNCATE categories, users, purchases, results RESTART IDENTITY CASCADE"
+docker compose exec db psql -U imtahan imtahan -f /tmp/data.sql
+docker compose cp ./uploads-backup/. api:/data/uploads
+```
 
 ## Lokal inkişaf
 
