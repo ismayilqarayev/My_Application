@@ -26,12 +26,14 @@ data class UserInfo(
 )
 
 /**
- * Bir sınaq. "number" sınağın daimi identifikatorudur (1-3 pulsuz, 4+ ödənişli),
- * "name" isə admin tərəfindən verilmiş istəyə bağlı addır (məs. "Fizika").
+ * Bir sınaq. "number" sınağın daimi identifikatorudur, "name" admin tərəfindən
+ * verilmiş istəyə bağlı addır (məs. "Fizika"). "free" = false olan sınaq yalnız
+ * ödənişi açılmış şagirdlərə açıqdır (admin panelindən dəyişdirilir).
  */
 data class Category(
     val number: Int = 0,
-    val name: String? = null
+    val name: String? = null,
+    val free: Boolean = false
 ) {
     val displayName: String get() = name ?: "sınaq $number"
 }

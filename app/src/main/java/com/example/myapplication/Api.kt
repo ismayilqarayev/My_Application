@@ -12,6 +12,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import java.io.IOException
@@ -34,6 +35,7 @@ data class AuthResponse(val token: String, val user: MeResponse)
 data class TokenResponse(val token: String)
 data class ResultRequest(val categoryNumber: Int, val score: Int, val total: Int)
 data class NewCategoryRequest(val name: String?)
+data class FreeRequest(val free: Boolean)
 data class NewQuestion(val text: String, val options: List<String>, val correctAnswerIndex: Int, val imageUrl: String? = null)
 data class ImageResponse(val url: String)
 data class ResultEntry(
@@ -84,6 +86,9 @@ interface ApiService {
 
     @DELETE("api/admin/categories/{number}")
     suspend fun deleteCategory(@Path("number") number: Int)
+
+    @PUT("api/admin/categories/{number}/free")
+    suspend fun setCategoryFree(@Path("number") number: Int, @Body body: FreeRequest): Category
 
     @POST("api/admin/categories/{number}/questions")
     suspend fun addQuestions(@Path("number") number: Int, @Body body: List<NewQuestion>): List<Question>

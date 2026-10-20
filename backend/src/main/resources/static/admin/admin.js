@@ -8,7 +8,6 @@ const LETTERS = 'ABCDEF';
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 6;
 const MAX_IMAGE_SIZE = 1600;
-const FREE_CATEGORY_COUNT = 3;
 
 const $ = (id) => document.getElementById(id);
 
@@ -209,7 +208,7 @@ function renderCategories() {
     },
       el('span', { class: 'nav-num', text: String(c.number) }),
       el('span', { class: 'nav-name', text: categoryName(c) }),
-      c.number > FREE_CATEGORY_COUNT ? el('span', { class: 'nav-lock', text: 'ödənişli' }) : null,
+      c.free ? null : el('span', { class: 'nav-lock', text: 'ödənişli' }),
     ),
   )));
 }
@@ -227,9 +226,32 @@ function renderCategoryHead() {
   if (!category) return;
   $('category-title').textContent = categoryName(category);
   const count = state.questions.length;
-  const kind = category.number > FREE_CATEGORY_COUNT ? 'ödənişli sınaq' : 'pulsuz sınaq';
+  const kind = category.free ? 'hamı üçün açıqdır' : 'yalnız ödəniş edən şagirdlər üçün';
   $('category-meta').textContent = `${count} sual, ${kind}`;
+  $('set-free').setAttribute('aria-checked', String(category.free));
+  $('set-paid').setAttribute('aria-checked', String(!category.free));
 }
+
+async function setCategoryFree(free) {
+  const category = currentCategory();
+  if (!category || category.free === free) return;
+  const buttons = [$('set-free'), $('set-paid')];
+  buttons.forEach((b) => { b.disabled = true; });
+  try {
+    const updated = await api(`/api/admin/categories/${category.number}/free`, { method: 'PUT', json: { free } });
+    Object.assign(category, updated);
+    renderCategories();
+    renderCategoryHead();
+    toast(free ? 'Sınaq pulsuz edildi.' : 'Sınaq ödənişli edildi.');
+  } catch (err) {
+    if (err.status !== 401) toast(err.message);
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+
+$('set-free').addEventListener('click', () => setCategoryFree(true));
+$('set-paid').addEventListener('click', () => setCategoryFree(false));
 
 $('add-category').addEventListener('click', async () => {
   const name = await ask({

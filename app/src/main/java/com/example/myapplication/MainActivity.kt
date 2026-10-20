@@ -219,6 +219,7 @@ fun TestApp(viewModel: TestViewModel = viewModel()) {
                     onAddCategory = viewModel::addNewCategory,
                     onCategoryChange = viewModel::refreshSelectedCategoryQuestions,
                     onDeleteCategory = viewModel::deleteCategory,
+                    onSetFree = viewModel::setCategoryFree,
                     onDeleteQuestion = viewModel::deleteQuestion,
                     onBack = {
                         // Admin panelinə hardan gəlinibsə (giriş edilməzdən əvvəl və ya sonra),
@@ -798,7 +799,7 @@ fun NameEntryScreen(isRegistering: Boolean, onRegister: (String, String, String)
 
 /**
  * Kateqoriya (sınaq) seçimi ekranı: serverdəki sınaqları 3-lük sıralarla
- * göstərir. 4-cü sınaqdan yuxarı, ödəniş edilməyibsə, kilidli olur. Sınaqların
+ * göstərir. Admin ödənişli işarələdiyi sınaqlar, ödəniş edilməyibsə, kilidli olur. Sınaqların
  * sayı sabit deyil - admin panelindən artırıla bilər (bax: TestViewModel.addNewCategory).
  *
  * DİQQƏT: Bu funksiya bilərəkdən TestViewModel-i BİRBAŞA qəbul ETMİR -
@@ -882,8 +883,8 @@ fun CategorySelectionScreen(
         ) {
             items(categories, key = { it.number }) { category ->
                 val number = category.number
-                // 1-3 pulsuzdur; 4-dən yuxarı yalnız ödənişdən sonra açılır (server də yoxlayır)
-                val isLocked = number >= 4 && !isUnlocked
+                // Admin ödənişli işarələdiyi sınaq yalnız ödənişdən sonra açılır (server də yoxlayır)
+                val isLocked = !category.free && !isUnlocked
                 // Hər açıq kartın öz fənn ikonu+rəngi olsun deyə (dövri) - "dərs rəfi"
                 // hissi versin, hamısı eyni görünən kvadrat olmasın
                 val accent = lessonAccents[(number - 1).mod(lessonAccents.size)]
@@ -1004,7 +1005,7 @@ private const val PAYMENT_CARD_NUMBER = BuildConfig.PAYMENT_CARD_NUMBER
 private const val PAYMENT_AMOUNT_AZN = BuildConfig.PAYMENT_AMOUNT_AZN
 
 /**
- * 4-cü sınaqdan yuxarı bir kateqoriyaya klikləyəndə açılan pəncərə.
+ * Kilidli (ödənişli) bir sınağa klikləyəndə açılan pəncərə.
  *
  * AXIN (bank inteqrasiyası OLMADAN, sadə kart-karta köçürmə ilə):
  *  1) İstifadəçiyə kart nömrəsi və məbləğ göstərilir (telefon nömrəsi artıq
@@ -1026,7 +1027,7 @@ fun PaymentDialog(viewModel: TestViewModel, onDismiss: () -> Unit) {
                     Text("Ödəniş təsdiqləndi, bütün sınaqlar artıq açıqdır.")
                 } else {
                     // Hələ açılmayıb - kart nömrəsi, məbləğ və təlimat göstərilir
-                    Text("4-cü sınaqdan etibarən bütün testlərə giriş ödənişlidir.")
+                    Text("Kilidli sınaqlara giriş ödənişlidir. Bir dəfə ödəniş etməklə hamısı açılır.")
                     Spacer(modifier = Modifier.height(16.dp))
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -1089,6 +1090,7 @@ fun AdminScreen(
     onAddCategory: (String, (Int) -> Unit) -> Unit,
     onCategoryChange: (Int) -> Unit,
     onDeleteCategory: (Int) -> Unit,
+    onSetFree: (Int, Boolean) -> Unit,
     onDeleteQuestion: (Int, Long) -> Unit,
     onBack: () -> Unit,
     onUpload: (Int, String, List<String>, Int, Uri?, () -> Unit) -> Unit,
@@ -1382,6 +1384,25 @@ fun AdminScreen(
                                     }
                                 }
                             }
+                        }
+
+                        // Bu sınaq hamı üçün açıqdır, yoxsa yalnız ödəniş edənlər üçün
+                        val isFree = categories.find { it.number == category }?.free ?: false
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Pulsuz sınaq", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(
+                                    if (isFree) "Hamı üçün açıqdır" else "Yalnız ödəniş edən şagirdlər üçün",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(checked = isFree, onCheckedChange = { onSetFree(category, it) })
                         }
 
                         Spacer(Modifier.height(20.dp))
@@ -2244,7 +2265,7 @@ fun NameEntryPreview() {
 fun CategorySelectionPreview() {
     MyApplicationTheme {
         // "isUnlocked = false" - önizləmədə kilidlərin necə göründüyünü görmək üçün
-        CategorySelectionScreen(categories = (1..25).map { Category(it) }, isUnlocked = false, onCategorySelected = {}, onLockedClick = {}, onAdminVerify = { _, onResult -> onResult(false) }, onAdminClick = {}, onBack = {})
+        CategorySelectionScreen(categories = (1..25).map { Category(it, free = it <= 3) }, isUnlocked = false, onCategorySelected = {}, onLockedClick = {}, onAdminVerify = { _, onResult -> onResult(false) }, onAdminClick = {}, onBack = {})
     }
 }
 
@@ -2254,11 +2275,12 @@ fun AdminPreview() {
     MyApplicationTheme {
         AdminScreen(
             isLoading = false,
-            categories = (1..25).map { Category(it) },
+            categories = (1..25).map { Category(it, free = it <= 3) },
             categoryQuestions = emptyList(),
             onAddCategory = { _, _ -> },
             onCategoryChange = {},
             onDeleteCategory = {},
+            onSetFree = { _, _ -> },
             onDeleteQuestion = { _, _ -> },
             onBack = {},
             onUpload = { _, _, _, _, _, _ -> },

@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile
 import java.util.UUID
 
 data class NewCategoryRequest(val name: String? = null)
+data class FreeRequest(val free: Boolean)
 data class ImageResponse(val url: String)
 
 /** Müəllim (admin) paneli - yalnız admin token-i ilə əlçatandır (bax: SecurityConfig). */
@@ -42,6 +43,10 @@ class AdminController(
     @PatchMapping("/categories/{number}")
     fun renameCategory(@PathVariable number: Int, @RequestBody req: NewCategoryRequest): CategoryDto =
         categories.rename(number, cleanName(req.name)) ?: throw notFound("Sınaq tapılmadı.")
+
+    @PutMapping("/categories/{number}/free")
+    fun setCategoryFree(@PathVariable number: Int, @RequestBody req: FreeRequest): CategoryDto =
+        categories.setFree(number, req.free) ?: throw notFound("Sınaq tapılmadı.")
 
     private fun cleanName(raw: String?): String? {
         val name = raw?.trim()?.takeIf { it.isNotEmpty() }

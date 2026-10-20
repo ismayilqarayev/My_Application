@@ -29,9 +29,6 @@ data class AppProperties(
     val uploadPath: Path get() = Path.of(uploadDir).toAbsolutePath().normalize()
 }
 
-/** 1-3-cü sınaqlar pulsuzdur, qalanları ödənişdən sonra açılır. */
-const val FREE_CATEGORY_COUNT = 3
-
 /**
  * Yüklənmiş sual şəkillərini "/uploads/<fayl>" ünvanında, brauzer admin panelini
  * isə "/admin" ünvanında (resources/static/admin/) paylayır.

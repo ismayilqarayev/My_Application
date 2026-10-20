@@ -60,6 +60,10 @@
           <p id="category-meta" class="muted"></p>
         </div>
         <div class="view-actions">
+          <div class="segmented" role="radiogroup" aria-label="Sınağa giriş">
+            <button id="set-free" role="radio" aria-checked="false" type="button">Pulsuz</button>
+            <button id="set-paid" role="radio" aria-checked="false" type="button">Ödənişli</button>
+          </div>
           <button id="rename-category" class="btn btn-quiet" type="button">Adını dəyiş</button>
           <button id="delete-category" class="btn btn-danger-quiet" type="button">Sınağı sil</button>
         </div>
@@ -159,7 +163,7 @@
 
       <form id="unlock-form" class="sheet account-form" novalidate>
         <h2>Ödənişli sınaqları aç</h2>
-        <p class="muted">Şagird kartınıza köçürmə edibsə, telefon nömrəsini yazın. 4-cü sınaqdan sonrakılar bu hesab üçün açılacaq.</p>
+        <p class="muted">Şagird kartınıza köçürmə edibsə, telefon nömrəsini yazın. Bütün ödənişli sınaqlar bu hesab üçün açılacaq.</p>
         <div class="inline-field">
           <input id="unlock-phone" type="tel" placeholder="050 123 45 67" aria-label="Telefon nömrəsi">
           <button class="btn btn-primary" type="submit">Sınaqları aç</button>

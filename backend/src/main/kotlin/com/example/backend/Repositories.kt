@@ -14,7 +14,8 @@ data class UserRow(
     val deviceId: String
 )
 
-data class CategoryDto(val number: Int, val name: String?)
+/** "free" = false olan sınaq yalnız ödənişi açılmış şagirdlərə görünür. */
+data class CategoryDto(val number: Int, val name: String?, val free: Boolean)
 
 data class QuestionDto(
     val id: Long,
@@ -91,12 +92,20 @@ class PurchaseRepository(private val jdbc: JdbcClient) {
 
 @Repository
 class CategoryRepository(private val jdbc: JdbcClient) {
-    private val mapper = RowMapper { rs, _ -> CategoryDto(rs.getInt("number"), rs.getString("name")) }
+    private val mapper = RowMapper { rs, _ -> CategoryDto(rs.getInt("number"), rs.getString("name"), rs.getBoolean("free")) }
 
     fun findAll(): List<CategoryDto> = jdbc.sql("SELECT * FROM categories ORDER BY number").query(mapper).list()
 
-    fun exists(number: Int): Boolean =
-        jdbc.sql("SELECT count(*) FROM categories WHERE number = :n").param("n", number).query(Int::class.java).single() > 0
+    fun find(number: Int): CategoryDto? =
+        jdbc.sql("SELECT * FROM categories WHERE number = :n").param("n", number).query(mapper).optional().orElse(null)
+
+    fun exists(number: Int): Boolean = find(number) != null
+
+    fun setFree(number: Int, free: Boolean): CategoryDto? =
+        jdbc.sql("UPDATE categories SET free = :free WHERE number = :n RETURNING *")
+            .param("free", free)
+            .param("n", number)
+            .query(mapper).optional().orElse(null)
 
     /**
      * Ən kiçik boş nömrəni götürür: silinmiş sınağın nömrəsi varsa onu yenidən

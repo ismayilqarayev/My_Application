@@ -123,7 +123,7 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     // ---------------------------------------------------------------------
-    // ÖDƏNİŞ / AÇILIŞ (4-cü sınaqdan yuxarı ödənişli hissə)
+    // ÖDƏNİŞ / AÇILIŞ (admin tərəfindən ödənişli işarələnmiş sınaqlar)
     // Şagird admininin kartına köçürmə edir, admin panelindən həmin nömrəni əl
     // ilə "açır". Server ödənişli sınaqların suallarını açılmamış hesaba VERMİR.
     // ---------------------------------------------------------------------
@@ -371,6 +371,16 @@ class TestViewModel(application: Application) : AndroidViewModel(application) {
             apiCall("Sınaq silinə bilmədi.") { api.service.deleteCategory(categoryNumber) } ?: return@launch
             categories = categories.filter { it.number != categoryNumber }
             _selectedCategoryQuestions.clear()
+        }
+    }
+
+    /** Sınağı pulsuz (hamı üçün açıq) və ya ödənişli edir. */
+    fun setCategoryFree(categoryNumber: Int, free: Boolean) {
+        viewModelScope.launch {
+            val updated = apiCall("Sınağın giriş növü dəyişdirilə bilmədi.") {
+                api.service.setCategoryFree(categoryNumber, FreeRequest(free))
+            } ?: return@launch
+            categories = categories.map { if (it.number == updated.number) updated else it }
         }
     }
 

@@ -30,9 +30,9 @@ class QuizController(
     @GetMapping("/categories/{number}/questions")
     fun questions(@PathVariable number: Int, @AuthenticationPrincipal jwt: Jwt): List<QuestionDto> {
         val user = currentUser.load(jwt)
-        if (!categories.exists(number)) throw notFound("Sınaq tapılmadı.")
+        val category = categories.find(number) ?: throw notFound("Sınaq tapılmadı.")
         // Ödənişli sınaqlar server tərəfində də yoxlanılır - tətbiqi "sındırmaqla" açmaq olmasın
-        if (number > FREE_CATEGORY_COUNT && !purchases.isUnlocked(user.phone)) {
+        if (!category.free && !purchases.isUnlocked(user.phone)) {
             throw ApiException(HttpStatus.FORBIDDEN, "Bu sınaq ödənişlidir.")
         }
         return questions.findByCategory(number)

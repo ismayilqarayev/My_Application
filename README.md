@@ -8,7 +8,7 @@ Kotlin və Jetpack Compose ilə yazılmış Android imtahan/test tətbiqi və on
 - **Giriş**: rol seçimi ("Şagird" / "Müəllim") ilə başlayır
 - **Qeydiyyat**: ilk dəfə telefon nömrəsi + ad-soyad + parol daxil edilir (SMS təsdiqi tələb olunmur)
 - **Sonrakı girişlər**: nömrə + parol ilə. Hesab ilk daxil olduğu telefona bağlanır (paylaşılmasın deyə) — telefon dəyişəndə admin cihazı sıfırlayır
-- **Sınaqlar**: 1–3-cü sınaqlar pulsuz, 4-cü sınaqdan yuxarı ödənişlidir
+- **Sınaqlar**: hər sınaq pulsuz və ya ödənişli ola bilər — admin bunu panelindən istənilən sınaq üçün seçir (ilk quraşdırmada 1–3 pulsuz, qalanları ödənişlidir)
   - Ödəniş: kart-karta köçürmə (məbləğ və kart nömrəsi `local.properties`-dən gəlir) + admin əl ilə açır
   - Sınaqlar ekranı hər 15 saniyədən bir serverdən yenilənir — ödəniş təsdiqlənən kimi kilidlər götürülür
   - Server ödənişli sınaqların suallarını açılmamış hesaba vermir
@@ -29,6 +29,7 @@ Kompüterdə sual bankı ilə rahat işləmək üçün. Server işləyən istən
 lokal kompüterdə `http://localhost/admin`, serverdə `http://<SERVER_IP>/admin` (domen alınandan sonra `https://<domen>/admin`).
 
 - Sualları əlavə etmək, **redaktə etmək** və silmək; sınağın adını dəyişmək
+- Hər sınağı **Pulsuz / Ödənişli** etmək (tətbiqdəki admin panelində də "Pulsuz sınaq" açarı var)
 - `Ctrl+Enter` ilə saxlamaq, variantlar arasında `Enter` ilə keçmək
 - Şəkli seçmək, sürükləyib atmaq və ya `Ctrl+V` ilə (məs. ekran görüntüsü) yapışdırmaq — böyük şəkillər avtomatik 1600px-ə kiçildilir
 - Toplu yükləmə: yazdıqca neçə sualın hazır olduğunu göstərir
@@ -89,7 +90,7 @@ backend/
 |---|---|
 | `users` | telefon, ad, soyad, parolun bcrypt hash-i, bağlı cihaz ID-si |
 | `purchases` | telefon → ödənişli sınaqlar açıqdırmı |
-| `categories` | sınağın nömrəsi (1–3 pulsuz) və istəyə bağlı adı |
+| `categories` | sınağın nömrəsi, istəyə bağlı adı və `free` (pulsuzdurmu) |
 | `questions` | mətn, variantlar (`TEXT[]`), düzgün cavab, şəkil ünvanı |
 | `results` | şagird, sınaq, xal, ümumi sual sayı, tarix |
 

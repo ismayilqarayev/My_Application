@@ -306,7 +306,9 @@ input:focus, textarea:focus {
   cursor: pointer;
 }
 
-.segmented button[aria-selected="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.segmented button[aria-selected="true"],
+.segmented button[aria-checked="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.segmented button:disabled { cursor: wait; }
 
 .editing-note {
   font-size: 14px;
